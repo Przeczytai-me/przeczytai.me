@@ -37,11 +37,11 @@ async def process_reading(
     selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
     recording_path: Path | None = None
 
-    try:
-        existing = repo.get(owner_user_id, reading_id)
-        if existing and existing.get("status") in TERMINAL_READING_STATUSES:
-            return {"status": str(existing["status"])}
+    existing = repo.get(owner_user_id, reading_id)
+    if existing and existing.get("status") in TERMINAL_READING_STATUSES:
+        return {"status": str(existing["status"])}
 
+    try:
         ensure_tts_provider_available(selection, settings)
         original_text = storage.get_text(original_text_key)
         provider = validate_tts_input(original_text, selection)
