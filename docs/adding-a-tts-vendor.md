@@ -31,18 +31,22 @@ async def _synthesize_acme_to_file(
 
 ## Step 2 — Register the provider
 
-Add an entry to `TTS_PROVIDERS`. Put the vendor's constants (name, voices, default
-voice, limits) next to the other vendors' constants at the top of the file.
+Add a member to the `TtsVendor` enum and an entry to `TTS_PROVIDERS`. Put the
+vendor's constants (voices, default voice, limits) next to the other vendors'
+constants at the top of the file.
 
 ```python
-ACME_TTS_VENDOR = "acme"
+class TtsVendor(StrEnum):
+    ...
+    ACME = "acme"
+
 ACME_TTS_VOICE = "nova"
 ACME_TTS_VOICES = {"Nova": "nova", "Echo": "echo"}  # friendly name -> vendor voice id
 
 TTS_PROVIDERS = {
     ...,
-    ACME_TTS_VENDOR: TtsProvider(
-        vendor=ACME_TTS_VENDOR,
+    TtsVendor.ACME: TtsProvider(
+        vendor=TtsVendor.ACME,
         default_voice=ACME_TTS_VOICE,
         voices=ACME_TTS_VOICES,
         synthesizer=_synthesize_acme_to_file,
@@ -66,16 +70,25 @@ Vendors that need an API key (like OpenAI) add a config gate so the API rejects
 requests with `503 provider_unavailable` before doing any work.
 
 1. **Add settings** in [`backend/app/config.py`](../backend/app/config.py), e.g.
-   `acme_api_key` / `acme_tts_enabled`.
+   `acme_api_key` / `acme_tts_enabled`. Derive the enabled flag once at
+   construction time so the rest of the code only reads a bool (see
+   `_derive_openai_tts_enabled` for the pattern):
 
-2. **Give the provider an `is_configured` check** — return `True` only when the
-   credentials are present:
+   ```python
+   @model_validator(mode="after")
+   def _derive_acme_tts_enabled(self) -> "Settings":
+       if self.acme_tts_enabled is None:
+           self.acme_tts_enabled = bool((self.acme_api_key or "").strip())
+       return self
+   ```
+
+2. **Give the provider an `is_configured` check** that reads the derived flag:
 
    ```python
    def _acme_tts_configured(settings: Settings | None) -> bool:
-       return bool(settings and settings.acme_api_key)
+       return bool(settings and settings.acme_tts_enabled)
 
-   ACME_TTS_VENDOR: TtsProvider(
+   TtsVendor.ACME: TtsProvider(
        ...,
        is_configured=_acme_tts_configured,   # default is "always available"
    ),

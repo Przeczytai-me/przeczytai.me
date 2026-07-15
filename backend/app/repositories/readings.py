@@ -36,8 +36,8 @@ class ReadingRepository:
         reading_id: str,
         original_text_key: str,
         char_count: int,
-        vendor: str | None,
-        voice: str | None,
+        vendor: str,
+        voice: str,
     ) -> dict:
         now = _now()
         item = {
@@ -68,8 +68,8 @@ class ReadingRepository:
         owner_user_id: str,
         reading_id: str,
         original_text_key: str,
-        vendor: str | None,
-        voice: str | None,
+        vendor: str,
+        voice: str,
     ) -> None:
         if not self.lambda_client or not self.processor_function_name:
             raise ProcessingStartError

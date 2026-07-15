@@ -1,14 +1,18 @@
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from functools import lru_cache
 
 from app.config import Settings
 
 
-EDGE_TTS_VENDOR = "edge-tts"
-OPENAI_TTS_VENDOR = "openai"
-DEFAULT_TTS_VENDOR = EDGE_TTS_VENDOR
+class TtsVendor(StrEnum):
+    EDGE_TTS = "edge-tts"
+    OPENAI = "openai"
+
+
+DEFAULT_TTS_VENDOR = TtsVendor.EDGE_TTS
 
 EDGE_TTS_VOICES = {
     "Zofia": "pl-PL-ZofiaNeural",
@@ -58,7 +62,7 @@ class TtsConfigurationError(Exception):
 
 @dataclass(frozen=True)
 class TtsSelection:
-    vendor: str
+    vendor: TtsVendor
     voice: str
 
 
@@ -68,7 +72,7 @@ ConfigCheck = Callable[[Settings | None], bool]
 
 @dataclass(frozen=True)
 class TtsProvider:
-    vendor: str
+    vendor: TtsVendor
     default_voice: str
     voices: Mapping[str, str]
     synthesizer: Synthesizer
@@ -102,14 +106,7 @@ async def _synthesize_edge_tts_to_file(
 
 
 def _openai_tts_configured(settings: Settings | None) -> bool:
-    if not settings:
-        return False
-    if settings.openai_tts_enabled is not None:
-        return settings.openai_tts_enabled
-    return bool(
-        (settings.openai_api_key and settings.openai_api_key.strip())
-        or (settings.openai_api_key_secret_arn and settings.openai_api_key_secret_arn.strip())
-    )
+    return bool(settings and settings.openai_tts_enabled)
 
 
 async def _synthesize_openai_to_file(
@@ -122,7 +119,7 @@ async def _synthesize_openai_to_file(
 
     api_key = get_openai_api_key(settings)
     if not api_key:
-        raise TtsProviderUnavailableError(f"{OPENAI_TTS_VENDOR} TTS is not configured")
+        raise TtsProviderUnavailableError(f"{TtsVendor.OPENAI} TTS is not configured")
 
     async with AsyncOpenAI(api_key=api_key) as client:
         async with client.audio.speech.with_streaming_response.create(
@@ -136,15 +133,15 @@ async def _synthesize_openai_to_file(
 
 # Add another vendor here: register its synthesizer, voices, limits, and (when it needs
 # credentials) an `is_configured` check. The API, repository, and processor stay on the same path.
-TTS_PROVIDERS: dict[str, TtsProvider] = {
-    EDGE_TTS_VENDOR: TtsProvider(
-        vendor=EDGE_TTS_VENDOR,
+TTS_PROVIDERS: dict[TtsVendor, TtsProvider] = {
+    TtsVendor.EDGE_TTS: TtsProvider(
+        vendor=TtsVendor.EDGE_TTS,
         default_voice=EDGE_TTS_VOICE,
         voices=EDGE_TTS_VOICES,
         synthesizer=_synthesize_edge_tts_to_file,
     ),
-    OPENAI_TTS_VENDOR: TtsProvider(
-        vendor=OPENAI_TTS_VENDOR,
+    TtsVendor.OPENAI: TtsProvider(
+        vendor=TtsVendor.OPENAI,
         default_voice=OPENAI_TTS_VOICE,
         voices=OPENAI_TTS_VOICES,
         synthesizer=_synthesize_openai_to_file,
@@ -158,8 +155,8 @@ TTS_PROVIDERS: dict[str, TtsProvider] = {
 def get_tts_provider(vendor: str | None) -> TtsProvider:
     normalized_vendor = (vendor or DEFAULT_TTS_VENDOR).strip().lower() or DEFAULT_TTS_VENDOR
     try:
-        return TTS_PROVIDERS[normalized_vendor]
-    except KeyError as exc:
+        return TTS_PROVIDERS[TtsVendor(normalized_vendor)]
+    except ValueError as exc:
         raise UnsupportedTtsVendorError(f"Unsupported TTS vendor: {normalized_vendor}") from exc
 
 
