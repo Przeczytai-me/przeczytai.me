@@ -81,4 +81,77 @@ export const pl = {
       contactEmail: "informaks23@gmail.com",
     },
   },
+  app: {
+    notImplementedYet: "not implemented yet",
+    shell: {
+      productName: "PrzeczytAI.me",
+      processingStatus: "Brak aktywnego przetwarzania",
+      documentTitlePrefix: "Dokument",
+      navigation: {
+        documents: "Dokumenty",
+        newDocument: "Nowy dokument",
+        jobs: "Zadania",
+        settings: "Ustawienia",
+        documentation: "Dokumentacja",
+      },
+      sidebar: {
+        collapseLabel: "Zwiń panel boczny",
+        expandLabel: "Rozwiń panel boczny",
+      },
+      breadcrumbs: {
+        label: "Ścieżka dokumentu",
+        documents: "Dokumenty",
+      },
+      toasts: {
+        label: "Powiadomienia aplikacji",
+        title: "Powiadomienia gotowe",
+        description:
+          "Tutaj pojawią się informacje o przesyłaniu, przetwarzaniu, pobieraniu i zapisywaniu.",
+      },
+    },
+    documents: {
+      heading: "Dokumenty",
+      description:
+        "Przeglądaj przesłane teksty, statusy przetwarzania i gotowe nagrania.",
+      newDocument: "Nowy dokument",
+      searchPlaceholder: "Szukaj dokumentu",
+      statusFilter: "Wszystkie statusy",
+      refresh: "Odśwież",
+      refreshing: "Odświeżanie",
+      loading: "Ładowanie dokumentów...",
+      emptyTitle: "Nie masz jeszcze dokumentów",
+      emptyAction: "Dodaj pierwszy dokument",
+      next: "Załaduj więcej",
+      loadingMore: "Ładowanie",
+      summary: {
+        total: "Dokumenty",
+        processing: "W trakcie",
+        ready: "Gotowe",
+      },
+      row: {
+        created: "Utworzono",
+        downloadRecording: "MP3",
+        downloadText: "Tekst",
+        delete: "Usuń",
+        deleting: "Usuwanie",
+        downloadFailed: "Pobieranie nie powiodło się",
+      },
+    },
+    newDocument: {
+      heading: "Nowy dokument",
+      description:
+        "Dodaj tekst do przetworzenia na uporządkowany materiał i narrację.",
+      fileLabel: "Plik źródłowy",
+      fileDescription: "Wybierz plik .txt lub .md albo wklej tekst poniżej.",
+      selectedFile: "Wybrany plik",
+      unsupportedFile: "Obsługiwane są tylko pliki .txt i .md.",
+      textPlaceholder: "Wklej tekst dokumentu",
+      vendorPlaceholder: "Dostawca głosu (opcjonalnie)",
+      voicePlaceholder: "Głos (opcjonalnie)",
+      limitNote: "Limit v1:",
+      create: "czytAI",
+      creating: "Tworzenie",
+      created: "Utworzono",
+    },
+  },
 } as const;

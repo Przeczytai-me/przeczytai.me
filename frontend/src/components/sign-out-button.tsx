@@ -2,7 +2,13 @@
 
 import { useClerk } from "@clerk/nextjs";
 
-export const SignOutButton = ({ className }: { className?: string }) => {
+export const SignOutButton = ({
+  className,
+  children = "Wyloguj",
+}: {
+  className?: string;
+  children?: React.ReactNode;
+}) => {
   const { signOut } = useClerk();
 
   return (
@@ -11,7 +17,7 @@ export const SignOutButton = ({ className }: { className?: string }) => {
       className={className}
       onClick={() => signOut({ redirectUrl: "/" })}
     >
-      Sign out
+      {children}
     </button>
   );
 };

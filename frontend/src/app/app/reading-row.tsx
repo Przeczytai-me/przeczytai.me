@@ -1,10 +1,16 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Download, FileText, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { dictionary } from "@/i18n/dictionaries";
 import type { Reading } from "@/lib/api";
 import { deleteReading, downloadFile } from "@/lib/api";
+import { formatPolishCount } from "@/lib/pluralize";
 
 export const ReadingRow = ({ reading }: { reading: Reading }) => {
+  const copy = dictionary.app.documents.row;
   const queryClient = useQueryClient();
 
   const deleteMutation = useMutation({
@@ -18,16 +24,26 @@ export const ReadingRow = ({ reading }: { reading: Reading }) => {
     try {
       await downloadFile(path, filename);
     } catch (e) {
-      alert(`Download failed: ${e}`);
+      alert(`${copy.downloadFailed}: ${e}`);
     }
   };
 
   return (
-    <div className="border rounded-md p-3 flex flex-col gap-2 text-sm">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <span className="font-mono text-xs text-zinc-500 truncate">
-          {reading.id}
-        </span>
+    <div className="grid gap-3 rounded-md border border-border bg-background p-4 text-sm lg:grid-cols-[minmax(16rem,1fr)_12rem_16rem] lg:items-center">
+      <div className="min-w-0">
+        <Link
+          href={`/app/documents/${reading.id}`}
+          className="flex min-w-0 items-center gap-2 font-medium hover:underline"
+        >
+          <FileText className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate">{reading.id}</span>
+        </Link>
+        <p className="mt-1 text-muted-foreground text-xs">
+          {copy.created}: {new Date(reading.created_at).toLocaleString("pl-PL")}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
         <span
           className={`text-xs px-2 py-0.5 rounded-full font-medium ${
             reading.status === "completed"
@@ -39,15 +55,17 @@ export const ReadingRow = ({ reading }: { reading: Reading }) => {
         >
           {reading.status}
         </span>
+        <span className="text-muted-foreground text-xs">
+          {formatPolishCount(reading.char_count, {
+            one: "znak",
+            few: "znaki",
+            many: "znaków",
+          })}
+        </span>
       </div>
-      <div className="text-xs text-zinc-600 grid grid-cols-2 gap-1">
-        <span>chars: {reading.char_count}</span>
-        <span>vendor: {reading.vendor ?? "—"}</span>
-        <span>voice: {reading.voice ?? "—"}</span>
-        <span>created: {new Date(reading.created_at).toLocaleString()}</span>
-      </div>
-      <div className="flex items-center gap-2 flex-wrap pt-1">
-        <button
+
+      <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+        <Button
           type="button"
           onClick={() =>
             handleDownload(
@@ -56,11 +74,13 @@ export const ReadingRow = ({ reading }: { reading: Reading }) => {
             )
           }
           disabled={!reading.recording_key}
-          className="rounded border px-3 py-1 text-xs hover:bg-zinc-100 disabled:opacity-40"
+          size="xs"
+          variant="outline"
         >
-          Download Recording
-        </button>
-        <button
+          <Download className="size-3" aria-hidden="true" />
+          {copy.downloadRecording}
+        </Button>
+        <Button
           type="button"
           onClick={() =>
             handleDownload(
@@ -69,18 +89,22 @@ export const ReadingRow = ({ reading }: { reading: Reading }) => {
             )
           }
           disabled={!reading.corrected_text_key}
-          className="rounded border px-3 py-1 text-xs hover:bg-zinc-100 disabled:opacity-40"
+          size="xs"
+          variant="outline"
         >
-          Download Corrected Text
-        </button>
-        <button
+          <Download className="size-3" aria-hidden="true" />
+          {copy.downloadText}
+        </Button>
+        <Button
           type="button"
           onClick={() => deleteMutation.mutate()}
           disabled={deleteMutation.isPending}
-          className="rounded border border-red-300 px-3 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 ml-auto"
+          size="xs"
+          variant="destructive"
         >
-          {deleteMutation.isPending ? "Deleting…" : "DELETE"}
-        </button>
+          <Trash2 className="size-3" aria-hidden="true" />
+          {deleteMutation.isPending ? copy.deleting : copy.delete}
+        </Button>
       </div>
     </div>
   );
