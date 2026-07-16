@@ -81,6 +81,19 @@ export const pl = {
       contactEmail: "informaks23@gmail.com",
     },
   },
+  auth: {
+    signIn: {
+      title: "Zaloguj się",
+      description: "Wróć do swoich dokumentów i gotowych nagrań.",
+    },
+    signUp: {
+      title: "Utwórz konto",
+      description: "Zacznij pracę w prywatnej przestrzeni na dokumenty.",
+    },
+    backToLanding: "Wróć na stronę główną",
+    privateWorkspaceNote:
+      "Dokumenty są przechowywane w prywatnej przestrzeni użytkownika.",
+  },
   app: {
     notImplementedYet: "not implemented yet",
     shell: {
