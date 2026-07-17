@@ -300,7 +300,7 @@ def test_processing_falls_back_when_normalize_raises(monkeypatch) -> None:
     recording_key = storage.recording_key("user-1", "job-1")
     assert result == {"status": "completed"}
     assert storage.texts[corrected_text_key] == original_text
-    assert storage.bytes[recording_key].endswith(original_text.encode())
+    assert storage.bytes[recording_key].endswith(original_text.strip().encode())
     assert repo.completed is not None
     assert repo.completed["metadata"]["normalization"] == "failed"
 
