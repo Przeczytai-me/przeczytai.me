@@ -111,6 +111,15 @@ class ReadingRepository:
         status: ReadingStatus | str,
         metadata_patch: dict[str, object] | None = None,
     ) -> None:
+        if metadata_patch and not self._update_existing(
+            owner_user_id,
+            reading_id,
+            "SET metadata = if_not_exists(metadata, :empty_metadata)",
+            {},
+            {":empty_metadata": {}},
+        ):
+            return
+
         names = {"#status": "status"}
         values: dict[str, object] = {
             ":status": str(status),
@@ -140,18 +149,21 @@ class ReadingRepository:
         recording_key: str,
         metadata: dict[str, object],
     ) -> None:
-        updated = self._update_existing(
+        self._update_existing(
             owner_user_id,
             reading_id,
-            "SET corrected_text_key = :corrected_text_key, recording_key = :recording_key",
-            {},
+            "SET #status = :status, corrected_text_key = :corrected_text_key, "
+            "recording_key = :recording_key, metadata = :metadata, "
+            "updated_at = :updated_at",
+            {"#status": "status"},
             {
+                ":status": str(ReadingStatus.COMPLETED),
                 ":corrected_text_key": corrected_text_key,
                 ":recording_key": recording_key,
+                ":metadata": metadata,
+                ":updated_at": _now(),
             },
         )
-        if updated:
-            self.set_status(owner_user_id, reading_id, ReadingStatus.COMPLETED, metadata)
 
     def list(
         self, owner_user_id: str, limit: int, cursor: str | None
