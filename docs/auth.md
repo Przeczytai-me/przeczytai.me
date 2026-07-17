@@ -54,21 +54,21 @@ Next.js 16 replaced `middleware.ts` with `proxy.ts`. The proxy runs on the **edg
 
 The trade-off: it's coarser-grained. When you need per-page logic (e.g. redirect to a specific URL, or check a role), use `auth()` inside the server component in addition to the proxy.
 
-Public routes are defined as:
+Protected routes are defined as:
 
 ```ts
-const isPublicRoute = createRouteMatcher([
-  "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
+const isProtectedRoute = createRouteMatcher([
+  "/app(.*)",
+  "/api(.*)",
+  "/trpc(.*)",
 ]);
 ```
 
-Everything not in this list is blocked automatically.
+Only those route groups are blocked automatically. Unknown page URLs fall through to the app-level not-found handler, which redirects back to `/`.
 
 ### `auth()` inside server components (not client-side hooks)
 
-Where user data is needed server-side (e.g. `/protected`), `auth()` and `currentUser()` are called directly in the async server component. This means:
+Where user data is needed server-side (e.g. `/app`), `auth()` and `currentUser()` are called directly in the async server component. This means:
 
 - No client/server waterfall — user data is fetched during the server render
 - No loading states needed for auth-gated content
