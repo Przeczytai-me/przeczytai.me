@@ -11,16 +11,13 @@ NO_BREAK_ABBREVIATIONS = frozenset(
         "tj.",
         "m.in.",
         "prof.",
-        "dr",
         "dr.",
-        "mgr",
         "mgr.",
         "inż.",
         "ul.",
         "św.",
         "r.",
         "ok.",
-        "nr",
         "nr.",
         "godz.",
     }
@@ -29,7 +26,10 @@ NO_BREAK_ABBREVIATIONS = frozenset(
 _BLANK_LINES = re.compile(r"(?:\r?\n[^\S\r\n]*){2,}")
 _LIST_ITEM = re.compile(r"(?:[-*]|\d+\.)\s+")
 _INITIAL = re.compile(r"[A-ZĄĆĘŁŃÓŚŹŻ]\.")
+_WHITESPACE = re.compile(r"\s+")
 _OPENING_QUOTES = frozenset('"\'„“«‘')
+_TOKEN_OPENERS = '"\'„“«‘([{'
+_TOKEN_LOOKBEHIND = 32
 
 
 @dataclass(frozen=True)
@@ -75,26 +75,30 @@ def split_paragraphs(text: str) -> list[str]:
 
 
 def _is_sentence_boundary(text: str, punctuation_index: int) -> bool:
-    if text[punctuation_index] == ".":
-        token_match = re.search(r"\S+$", text[: punctuation_index + 1])
-        token = token_match.group() if token_match else ""
-        if token in NO_BREAK_ABBREVIATIONS or _INITIAL.fullmatch(token):
-            return False
-        if re.search(r"\d\.\d$", text[: punctuation_index + 2]):
-            return False
-
-    following = re.match(r"\s+", text[punctuation_index + 1 :])
+    following = _WHITESPACE.match(text, punctuation_index + 1)
     if not following:
         return False
-    next_index = punctuation_index + 1 + following.end()
+    next_index = following.end()
     if next_index >= len(text):
         return False
     next_character = text[next_index]
-    return (
+    if not (
         next_character.isupper()
         or next_character.isdigit()
         or next_character in _OPENING_QUOTES
-    )
+    ):
+        return False
+
+    if text[punctuation_index] == ".":
+        window_start = max(0, punctuation_index + 1 - _TOKEN_LOOKBEHIND)
+        token_start = punctuation_index
+        while token_start > window_start and not text[token_start - 1].isspace():
+            token_start -= 1
+        token = text[token_start : punctuation_index + 1].lstrip(_TOKEN_OPENERS)
+        if token.casefold() in NO_BREAK_ABBREVIATIONS or _INITIAL.fullmatch(token):
+            return False
+
+    return True
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -115,7 +119,9 @@ def _hard_split(text: str, max_chunk_chars: int) -> list[str]:
     while len(remaining) > max_chunk_chars:
         boundaries = list(re.finditer(r"\s+", remaining[: max_chunk_chars + 1]))
         if not boundaries:
-            break
+            pieces.append(remaining[:max_chunk_chars])
+            remaining = remaining[max_chunk_chars:].lstrip()
+            continue
         boundary = boundaries[-1]
         if boundary.start() == 0:
             remaining = remaining[boundary.end() :]
