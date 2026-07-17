@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -40,10 +41,10 @@ async def process_reading(
     selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
 
     existing = repo.get(owner_user_id, reading_id)
-    if existing and existing.get("status") in TERMINAL_READING_STATUSES:
-        return {"status": str(existing["status"])}
-
     try:
+        if existing and existing.get("status") in TERMINAL_READING_STATUSES:
+            return {"status": str(existing["status"])}
+
         ensure_tts_provider_available(selection, settings)
         original_text = storage.get_text(original_text_key)
         provider = validate_tts_input(original_text, selection)
@@ -71,6 +72,11 @@ async def process_reading(
         recording_key = storage.recording_key(owner_user_id, reading_id, provider.output_extension)
         recording_path = Path("/tmp") / f"{reading_id}.{provider.output_extension}"
         chunks = split_text(corrected, settings.max_chunk_chars)
+        if normalization_status == "failed" and chunks:
+            first_text = corrected[: len(corrected) - len(corrected.lstrip())] + chunks[0].text
+            chunks[0] = replace(chunks[0], text=first_text, char_count=len(first_text))
+            last_text = chunks[-1].text + corrected[len(corrected.rstrip()) :]
+            chunks[-1] = replace(chunks[-1], text=last_text, char_count=len(last_text))
 
         logger.info(
             "processing reading",
@@ -87,8 +93,7 @@ async def process_reading(
             Path("/tmp") / f"{reading_id}-{chunk.index:04d}.mp3" for chunk in chunks
         ]
         for chunk, chunk_path in zip(chunks, chunk_paths, strict=True):
-            chunk_text = corrected if len(chunks) == 1 else chunk.text
-            await synthesize(chunk_text, str(chunk_path), selection, settings)
+            await synthesize(chunk.text, str(chunk_path), selection, settings)
         merge_mp3_files(chunk_paths, recording_path)
         storage.put_bytes(recording_key, recording_path.read_bytes(), provider.content_type)
 
