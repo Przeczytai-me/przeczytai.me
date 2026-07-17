@@ -6,11 +6,18 @@ from typing import Any
 from app.config import Settings, get_settings
 from app.repositories.readings import ReadingRepository
 from app.storage import FileStorage
-from app.tts import TTS_VENDOR, resolve_tts_voice, synthesize_to_file
+from app.tts import (
+    ensure_tts_provider_available,
+    resolve_tts_selection,
+    synthesize_to_file,
+    tts_metadata,
+    validate_tts_input,
+)
 
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+TERMINAL_READING_STATUSES = {"completed", "failed"}
 
 
 async def process_reading(
@@ -27,38 +34,63 @@ async def process_reading(
     reading_id = str(event["reading_id"])
     owner_user_id = str(event["owner_user_id"])
     original_text_key = str(event["original_text_key"])
-    voice = resolve_tts_voice(event.get("voice"))
+    selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
+    recording_path: Path | None = None
 
-    original_text = storage.get_text(original_text_key)
-    corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id)
-    recording_key = storage.recording_key(owner_user_id, reading_id, "mp3")
-    recording_path = Path("/tmp") / f"{reading_id}.mp3"
+    existing = repo.get(owner_user_id, reading_id)
+    if existing and existing.get("status") in TERMINAL_READING_STATUSES:
+        return {"status": str(existing["status"])}
 
-    logger.info(
-        "processing reading",
-        extra={
-            "reading_id": reading_id,
-            "owner_user_id": owner_user_id,
-            "voice": voice,
-        },
-    )
+    try:
+        ensure_tts_provider_available(selection, settings)
+        original_text = storage.get_text(original_text_key)
+        provider = validate_tts_input(original_text, selection)
+        corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id)
+        recording_key = storage.recording_key(owner_user_id, reading_id, provider.output_extension)
+        recording_path = Path("/tmp") / f"{reading_id}.{provider.output_extension}"
 
-    storage.put_text(corrected_text_key, original_text, "text/markdown; charset=utf-8")
-    await synthesize(original_text, str(recording_path), voice)
-    storage.put_bytes(recording_key, recording_path.read_bytes(), "audio/mpeg")
-    recording_path.unlink(missing_ok=True)
+        logger.info(
+            "processing reading",
+            extra={
+                "reading_id": reading_id,
+                "owner_user_id": owner_user_id,
+                "vendor": selection.vendor,
+                "voice": selection.voice,
+            },
+        )
 
-    repo.mark_completed(
-        owner_user_id,
-        reading_id,
-        corrected_text_key,
-        recording_key,
-        {
-            "processor": TTS_VENDOR,
-            "voice": voice,
-        },
-    )
-    return {"status": "completed"}
+        storage.put_text(corrected_text_key, original_text, "text/markdown; charset=utf-8")
+        await synthesize(original_text, str(recording_path), selection, settings)
+        storage.put_bytes(recording_key, recording_path.read_bytes(), provider.content_type)
+
+        repo.mark_completed(
+            owner_user_id,
+            reading_id,
+            corrected_text_key,
+            recording_key,
+            tts_metadata(selection),
+        )
+        return {"status": "completed"}
+    except Exception as exc:
+        logger.exception(
+            "reading processing failed",
+            extra={
+                "reading_id": reading_id,
+                "owner_user_id": owner_user_id,
+                "vendor": selection.vendor,
+            },
+        )
+        try:
+            repo.mark_failed(owner_user_id, reading_id, {"processing_error": type(exc).__name__})
+        except Exception:
+            logger.exception(
+                "failed to mark reading failed",
+                extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
+            )
+        return {"status": "failed"}
+    finally:
+        if recording_path:
+            recording_path.unlink(missing_ok=True)
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, str]:

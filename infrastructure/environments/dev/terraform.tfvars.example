@@ -3,3 +3,5 @@ allowed_origins    = ["http://localhost:3000"]
 budget_limit_usd   = 8
 clerk_jwt_issuer   = "https://fitting-bonefish-84.clerk.accounts.dev"
 clerk_jwt_audience = "przeczytai-api-dev"
+# Create the secret outside Terraform so the API key never lands in state.
+# openai_api_key_secret_arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:openai-api-key-abc123"

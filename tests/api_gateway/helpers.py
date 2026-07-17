@@ -10,9 +10,19 @@ import pytest
 DEFAULT_TEXT = "Ala ma kota."
 
 
-def create_reading(client: httpx.Client, text: str | None = None) -> dict[str, Any]:
+def create_reading(
+    client: httpx.Client,
+    text: str | None = None,
+    vendor: str | None = None,
+    voice: str | None = None,
+) -> dict[str, Any]:
     original_text = text or f"{DEFAULT_TEXT} api-gateway-{uuid.uuid4()}"
-    response = client.post("/api/v1/readings", json={"original_text": original_text})
+    payload = {"original_text": original_text}
+    if vendor:
+        payload["vendor"] = vendor
+    if voice:
+        payload["voice"] = voice
+    response = client.post("/api/v1/readings", json=payload)
     assert response.status_code == 202, response.text
     data = response.json()
     data["submitted_text"] = original_text
@@ -24,7 +34,9 @@ def wait_for_completed(
     reading_id: str,
     timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
-    timeout = timeout_seconds or float(os.getenv("API_GATEWAY_PROCESSING_TIMEOUT_SECONDS", "120"))
+    timeout = timeout_seconds or float(
+        os.getenv("API_GATEWAY_PROCESSING_TIMEOUT_SECONDS", "120")
+    )
     deadline = time.monotonic() + timeout
     last_payload: dict[str, Any] | None = None
 
@@ -39,4 +51,6 @@ def wait_for_completed(
             pytest.fail(f"Reading processing failed to start: {last_payload}")
         time.sleep(3)
 
-    pytest.fail(f"Reading {reading_id} did not complete within {timeout} seconds: {last_payload}")
+    pytest.fail(
+        f"Reading {reading_id} did not complete within {timeout} seconds: {last_payload}"
+    )

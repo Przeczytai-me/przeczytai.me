@@ -1,9 +1,19 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  name_prefix  = "${var.project_slug}-${var.environment}"
-  repo_root    = abspath("${path.root}/../../..")
-  backend_path = "${local.repo_root}/backend"
+  name_prefix        = "${var.project_slug}-${var.environment}"
+  repo_root          = abspath("${path.root}/../../..")
+  backend_path       = "${local.repo_root}/backend"
+  openai_tts_enabled = var.openai_api_key_secret_arn != ""
+
+  processor_environment_variables = merge(
+    {
+      ENVIRONMENT         = var.environment
+      FILES_BUCKET_NAME   = module.storage.files_bucket_name
+      READINGS_TABLE_NAME = module.storage.metadata_table_name
+    },
+    local.openai_tts_enabled ? { OPENAI_API_KEY_SECRET_ARN = var.openai_api_key_secret_arn } : {}
+  )
 
   common_tags = {
     Project     = var.project_name
@@ -49,6 +59,7 @@ module "api_lambda" {
     ENVIRONMENT             = var.environment
     FILES_BUCKET_NAME       = module.storage.files_bucket_name
     MAX_TEXT_CHARS          = tostring(var.max_text_chars)
+    OPENAI_TTS_ENABLED      = tostring(local.openai_tts_enabled)
     PROCESSOR_FUNCTION_NAME = module.processor_lambda.function_name
     READINGS_TABLE_NAME     = module.storage.metadata_table_name
   }
@@ -93,13 +104,9 @@ module "processor_lambda" {
   memory_size   = var.processor_lambda_memory_size
   tags          = local.common_tags
 
-  environment_variables = {
-    ENVIRONMENT         = var.environment
-    FILES_BUCKET_NAME   = module.storage.files_bucket_name
-    READINGS_TABLE_NAME = module.storage.metadata_table_name
-  }
+  environment_variables = local.processor_environment_variables
 
-  policy_statements = [
+  policy_statements = concat([
     {
       sid = "MetadataTableAccess"
       actions = [
@@ -119,13 +126,19 @@ module "processor_lambda" {
       ]
       resources = ["${module.storage.files_bucket_arn}/*"]
     },
-  ]
+    ], local.openai_tts_enabled ? [
+    {
+      sid       = "ReadOpenaiApiKeySecret"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [var.openai_api_key_secret_arn]
+    },
+  ] : [])
 }
 
 resource "aws_lambda_function_event_invoke_config" "processor" {
   function_name                = module.processor_lambda.function_name
   maximum_event_age_in_seconds = 3600
-  maximum_retry_attempts       = 2
+  maximum_retry_attempts       = 0
 }
 
 module "http_api" {

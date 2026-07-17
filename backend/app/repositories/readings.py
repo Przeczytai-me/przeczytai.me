@@ -36,8 +36,8 @@ class ReadingRepository:
         reading_id: str,
         original_text_key: str,
         char_count: int,
-        vendor: str | None,
-        voice: str | None,
+        vendor: str,
+        voice: str,
     ) -> dict:
         now = _now()
         item = {
@@ -68,7 +68,8 @@ class ReadingRepository:
         owner_user_id: str,
         reading_id: str,
         original_text_key: str,
-        voice: str | None,
+        vendor: str,
+        voice: str,
     ) -> None:
         if not self.lambda_client or not self.processor_function_name:
             raise ProcessingStartError
@@ -82,6 +83,7 @@ class ReadingRepository:
                         "reading_id": reading_id,
                         "owner_user_id": owner_user_id,
                         "original_text_key": original_text_key,
+                        "vendor": vendor,
                         "voice": voice,
                     }
                 ).encode(),
@@ -95,7 +97,9 @@ class ReadingRepository:
     def mark_processing_start_failed(self, owner_user_id: str, reading_id: str) -> None:
         self.table.update_item(
             Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"},
-            UpdateExpression="SET #status = :status, metadata = :metadata, updated_at = :updated_at",
+            UpdateExpression=(
+                "SET #status = :status, metadata = :metadata, updated_at = :updated_at"
+            ),
             ExpressionAttributeNames={"#status": "status"},
             ExpressionAttributeValues={
                 ":status": "failed_to_start",
@@ -125,6 +129,31 @@ class ReadingRepository:
                     ":status": "completed",
                     ":corrected_text_key": corrected_text_key,
                     ":recording_key": recording_key,
+                    ":metadata": metadata,
+                    ":updated_at": _now(),
+                },
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return
+            raise
+
+    def mark_failed(
+        self,
+        owner_user_id: str,
+        reading_id: str,
+        metadata: dict[str, object],
+    ) -> None:
+        try:
+            self.table.update_item(
+                Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"},
+                UpdateExpression=(
+                    "SET #status = :status, metadata = :metadata, updated_at = :updated_at"
+                ),
+                ConditionExpression="attribute_exists(reading_id)",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":status": "failed",
                     ":metadata": metadata,
                     ":updated_at": _now(),
                 },

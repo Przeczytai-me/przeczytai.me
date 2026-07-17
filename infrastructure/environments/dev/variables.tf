@@ -58,6 +58,12 @@ variable "processor_image_tag" {
   default = "latest"
 }
 
+variable "openai_api_key_secret_arn" {
+  type        = string
+  default     = ""
+  description = "Secrets Manager secret ARN containing the OpenAI API key for processor TTS."
+}
+
 variable "clerk_jwt_issuer" {
   type        = string
   description = "Clerk issuer URL for API Gateway JWT authorizer validation."

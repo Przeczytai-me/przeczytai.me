@@ -26,6 +26,8 @@ aws ecr get-login-password --region "$AWS_REGION" \
 
 docker buildx build \
   --platform linux/amd64 \
+  --provenance=false \
+  --sbom=false \
   -f backend/Dockerfile.processor \
   -t "$IMAGE_URI" \
   --push \

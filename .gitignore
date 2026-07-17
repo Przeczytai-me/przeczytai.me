@@ -1,5 +1,11 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Claude Code
+AGENTS.md
+CLAUDE.md
+.agents/skills/
+plans/
+
 # dependencies
 node_modules
 .pnp
@@ -12,6 +18,7 @@ node_modules
 
 # testing
 **/tests/report_*
+/tested_assets/
 
 # python
 __pycache__/
@@ -39,7 +46,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.local.example
+!tests/api_gateway/.env.example
 infrastructure/environments/dev/processor.auto.tfvars.json
+infrastructure/environments/dev/terraform.tfvars
 
 # vercel
 .vercel
