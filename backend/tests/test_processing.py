@@ -505,3 +505,80 @@ def test_processing_single_chunk_reports_chunk_count() -> None:
     assert result == {"status": "completed"}
     assert repo.completed is not None
     assert repo.completed["metadata"]["chunks"] == 1
+
+
+def test_processing_synthesizes_single_chunk_text() -> None:
+    reading_id = "single-chunk-text"
+    original_text_key = f"users/user-1/readings/{reading_id}/original.txt"
+    text = "Ala ma kota.\n- Mruczek śpi."
+    event = {
+        "reading_id": reading_id,
+        "owner_user_id": "user-1",
+        "original_text_key": original_text_key,
+    }
+    storage = FakeStorage()
+    storage.texts[original_text_key] = text
+    repo = FakeRepo()
+    settings = Settings(readings_table_name="table", files_bucket_name="bucket")
+    chunks = split_text(text, settings.max_chunk_chars)
+    synthesized_texts: list[str] = []
+
+    async def recording_synthesize(
+        chunk_text: str,
+        output_path: str,
+        _selection: TtsSelection,
+        _settings: Settings | None = None,
+    ) -> None:
+        synthesized_texts.append(chunk_text)
+        Path(output_path).write_bytes(b"audio")
+
+    result = asyncio.run(
+        process_reading(event, settings, storage, repo, recording_synthesize)
+    )
+
+    assert len(chunks) == 1
+    assert chunks[0].text != text
+    assert result == {"status": "completed"}
+    assert synthesized_texts == [chunks[0].text]
+    assert repo.completed is not None
+    assert repo.completed["metadata"]["chunks"] == 1
+
+
+def test_processing_terminal_status_cleans_up_stale_files() -> None:
+    reading_id = "terminal-status-stale-files"
+    event = {
+        "reading_id": reading_id,
+        "owner_user_id": "user-1",
+        "original_text_key": f"users/user-1/readings/{reading_id}/original.txt",
+    }
+    repo = FakeRepo()
+    repo.items[("user-1", reading_id)] = {"status": "completed"}
+    stale_path = Path(f"/tmp/{reading_id}-0000.mp3")
+    stale_path.write_bytes(b"stale")
+    synthesized_texts: list[str] = []
+
+    async def recording_synthesize(
+        text: str,
+        _output_path: str,
+        _selection: TtsSelection,
+        _settings: Settings | None = None,
+    ) -> None:
+        synthesized_texts.append(text)
+
+    try:
+        result = asyncio.run(
+            process_reading(
+                event,
+                Settings(readings_table_name="table", files_bucket_name="bucket"),
+                FakeStorage(),
+                repo,
+                recording_synthesize,
+            )
+        )
+
+        assert result == {"status": "completed"}
+        assert synthesized_texts == []
+        assert list(Path("/tmp").glob(f"{reading_id}*")) == []
+    finally:
+        for temporary_path in Path("/tmp").glob(f"{reading_id}*"):
+            temporary_path.unlink(missing_ok=True)
