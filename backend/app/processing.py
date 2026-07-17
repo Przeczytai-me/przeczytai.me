@@ -58,7 +58,13 @@ async def process_reading(
             normalization_status = "failed"
 
         if settings.ai_normalization_enabled and normalization_status != "failed":
-            corrected = await ai_normalize(corrected)
+            try:
+                corrected = await ai_normalize(corrected)
+            except Exception:
+                logger.exception(
+                    "AI text normalization failed",
+                    extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
+                )
 
         corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id)
         recording_key = storage.recording_key(owner_user_id, reading_id, provider.output_extension)

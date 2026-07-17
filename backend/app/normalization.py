@@ -1,10 +1,26 @@
 import re
 
 
-_URL_RE = re.compile(r"\b(?:https?://|www\.)[^\s<>()\[\]{}\"']+", re.IGNORECASE)
+_URL_RE = re.compile(r"\b(?:https?://|www\.)[^\s<>()\[\]{}\"'„”“«»‚‘’]+", re.IGNORECASE)
 _EMAIL_RE = re.compile(
     r"(?<![\w.+-])[\w.+-]+@(?:[a-z0-9-]+\.)+[a-z]{2,}(?![\w-])",
     re.IGNORECASE,
+)
+_YEAR_ABBREVIATION_RE = re.compile(r"(?<!\w)(\d+)[ \t]*r\.(?!\w)", re.IGNORECASE)
+_PUNCTUATION_TRANSLATION = str.maketrans(
+    {
+        "„": '"',
+        "”": '"',
+        "“": '"',
+        "«": '"',
+        "»": '"',
+        "‚": "'",
+        "‘": "'",
+        "’": "'",
+        "–": "-",
+        "—": "-",
+        "―": "-",
+    }
 )
 _ABBREVIATIONS = (
     (re.compile(r"(?<!\w)np\.(?!\w)", re.IGNORECASE), "na przykład"),
@@ -28,7 +44,8 @@ def _normalize_whitespace(text: str) -> str:
 def _normalize_punctuation(text: str) -> str:
     text = re.sub(r"!+", "!", text)
     text = re.sub(r"\?+", "?", text)
-    return re.sub(r"\.{4,}", "…", text)
+    text = re.sub(r"\.{4,}", "…", text)
+    return text.translate(_PUNCTUATION_TRANSLATION)
 
 
 def _replace_url(match: re.Match[str]) -> str:
@@ -49,6 +66,7 @@ def _expand_abbreviation(match: re.Match[str], replacement: str) -> str:
 
 
 def _normalize_abbreviations(text: str) -> str:
+    text = _YEAR_ABBREVIATION_RE.sub(r"\1 roku", text)
     for pattern, replacement in _ABBREVIATIONS:
         text = pattern.sub(lambda match, value=replacement: _expand_abbreviation(match, value), text)
     return text
