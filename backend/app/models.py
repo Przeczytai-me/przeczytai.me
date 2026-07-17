@@ -1,4 +1,16 @@
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
+
+
+class ReadingStatus(StrEnum):
+    UPLOADED = "uploaded"
+    NORMALIZING = "normalizing"
+    GENERATING_AUDIO = "generating_audio"
+    MERGING_AUDIO = "merging_audio"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    FAILED_TO_START = "failed_to_start"
 
 
 class ApiError(BaseModel):
