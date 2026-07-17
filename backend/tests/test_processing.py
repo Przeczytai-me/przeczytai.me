@@ -119,6 +119,7 @@ def test_processing_generates_same_text_and_recording() -> None:
         "metadata": {
             "processor": DEFAULT_TTS_VENDOR,
             "voice": EDGE_TTS_VOICE,
+            "normalization": "regex-v1",
         },
     }
 
@@ -152,6 +153,7 @@ def test_processing_uses_requested_voice() -> None:
     assert repo.completed["metadata"] == {
         "processor": DEFAULT_TTS_VENDOR,
         "voice": "en-US-EmmaMultilingualNeural",
+        "normalization": "regex-v1",
     }
 
 
@@ -189,6 +191,7 @@ def test_processing_uses_requested_openai_vendor() -> None:
         "processor": "openai",
         "voice": "coral",
         "model": OPENAI_TTS_MODEL,
+        "normalization": "regex-v1",
     }
 
 
