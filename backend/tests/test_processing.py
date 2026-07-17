@@ -1,6 +1,9 @@
 import asyncio
 from pathlib import Path
 
+import pytest
+
+from app import models
 from app.config import Settings
 from app.processing import process_reading
 from app.splitting import split_text
@@ -35,10 +38,10 @@ class FakeStorage:
 class FakeRepo:
     def __init__(self) -> None:
         self.items: dict[tuple[str, str], dict[str, object]] = {
-            ("user-1", "job-1"): {"status": "processing"}
+            ("user-1", "job-1"): {"status": "uploaded", "metadata": {}}
         }
         self.completed: dict[str, object] | None = None
-        self.failed: dict[str, object] | None = None
+        self.transitions: list[tuple[str, dict[str, object] | None]] = []
 
     def get(self, owner_user_id: str, reading_id: str) -> dict[str, object] | None:
         return self.items.get((owner_user_id, reading_id))
@@ -58,20 +61,22 @@ class FakeRepo:
             "recording_key": recording_key,
             "metadata": metadata,
         }
-        self.items[(owner_user_id, reading_id)] = {"status": "completed"}
+        self.set_status(owner_user_id, reading_id, "completed", metadata)
 
-    def mark_failed(
+    def set_status(
         self,
         owner_user_id: str,
         reading_id: str,
-        metadata: dict[str, object],
+        status: str,
+        metadata_patch: dict[str, object] | None = None,
     ) -> None:
-        self.failed = {
-            "owner_user_id": owner_user_id,
-            "reading_id": reading_id,
-            "metadata": metadata,
-        }
-        self.items[(owner_user_id, reading_id)] = {"status": "failed"}
+        self.transitions.append((str(status), metadata_patch))
+        item = self.items.setdefault((owner_user_id, reading_id), {"metadata": {}})
+        item["status"] = str(status)
+        metadata = item.setdefault("metadata", {})
+        if metadata_patch:
+            assert isinstance(metadata, dict)
+            metadata.update(metadata_patch)
 
 
 async def fake_synthesize(
@@ -125,6 +130,12 @@ def test_processing_generates_same_text_and_recording() -> None:
             "merge": "byte-concat-v1",
         },
     }
+    assert [status for status, _ in repo.transitions[:-1]] == [
+        "normalizing",
+        "generating_audio",
+        "merging_audio",
+    ]
+    assert repo.transitions[-1][0] == "completed"
 
 
 def test_processing_uses_requested_voice() -> None:
@@ -202,8 +213,8 @@ def test_processing_uses_requested_openai_vendor() -> None:
     }
 
 
-def test_processing_marks_failed_when_synthesis_fails() -> None:
-    """Record a terminal failure instead of letting async Lambda retry paid work."""
+def test_processing_records_generating_audio_failure_and_reraises() -> None:
+    """Persist the synthesis stage failure and let the Lambda invocation fail."""
     event = {
         "reading_id": "job-1",
         "owner_user_id": "user-1",
@@ -214,26 +225,25 @@ def test_processing_marks_failed_when_synthesis_fails() -> None:
     storage = FakeStorage()
     repo = FakeRepo()
 
-    result = asyncio.run(
-        process_reading(
-            event,
-            Settings(
-                readings_table_name="table",
-                files_bucket_name="bucket",
-                openai_tts_enabled=True,
-            ),
-            storage,
-            repo,
-            failing_synthesize,
+    with pytest.raises(RuntimeError, match="provider failed"):
+        asyncio.run(
+            process_reading(
+                event,
+                Settings(
+                    readings_table_name="table",
+                    files_bucket_name="bucket",
+                    openai_tts_enabled=True,
+                ),
+                storage,
+                repo,
+                failing_synthesize,
+            )
         )
-    )
 
-    assert result == {"status": "failed"}
-    assert repo.failed == {
-        "owner_user_id": "user-1",
-        "reading_id": "job-1",
-        "metadata": {"processing_error": "RuntimeError"},
-    }
+    assert repo.transitions[-1] == (
+        "failed",
+        {"failed_stage": "generating_audio", "error": "provider failed"},
+    )
     assert repo.completed is None
 
 
@@ -457,30 +467,129 @@ def test_processing_cleans_up_when_second_chunk_synthesis_fails() -> None:
             raise RuntimeError("second chunk failed")
         Path(output_path).write_bytes(b"audio")
 
-    result = asyncio.run(
-        process_reading(
-            event,
-            Settings(
-                readings_table_name="table",
-                files_bucket_name="bucket",
-                max_chunk_chars=20,
-            ),
-            storage,
-            repo,
-            fail_on_second_chunk,
+    with pytest.raises(RuntimeError, match="second chunk failed"):
+        asyncio.run(
+            process_reading(
+                event,
+                Settings(
+                    readings_table_name="table",
+                    files_bucket_name="bucket",
+                    max_chunk_chars=20,
+                ),
+                storage,
+                repo,
+                fail_on_second_chunk,
+            )
         )
-    )
 
     recording_key = storage.recording_key("user-1", reading_id)
-    assert result == {"status": "failed"}
     assert recording_key not in storage.bytes
-    assert repo.failed == {
-        "owner_user_id": "user-1",
-        "reading_id": reading_id,
-        "metadata": {"processing_error": "RuntimeError"},
-    }
+    assert repo.transitions[-1] == (
+        "failed",
+        {"failed_stage": "generating_audio", "error": "second chunk failed"},
+    )
     assert calls == 2
     assert list(Path("/tmp").glob(f"{reading_id}*")) == []
+
+
+def test_processing_records_merging_audio_failure_and_reraises(monkeypatch) -> None:
+    def fail_merge(*_args: object) -> None:
+        raise RuntimeError("merge failed")
+
+    monkeypatch.setattr("app.processing.merge_mp3_files", fail_merge)
+    event = {
+        "reading_id": "job-1",
+        "owner_user_id": "user-1",
+        "original_text_key": "users/user-1/readings/job-1/original.txt",
+    }
+    repo = FakeRepo()
+
+    with pytest.raises(RuntimeError, match="merge failed"):
+        asyncio.run(
+            process_reading(
+                event,
+                Settings(readings_table_name="table", files_bucket_name="bucket"),
+                FakeStorage(),
+                repo,
+                fake_synthesize,
+            )
+        )
+
+    assert repo.transitions[-1] == (
+        "failed",
+        {"failed_stage": "merging_audio", "error": "merge failed"},
+    )
+
+
+def test_processing_records_recording_upload_as_merging_audio_failure() -> None:
+    class FailingUploadStorage(FakeStorage):
+        def put_bytes(self, key: str, content: bytes, content_type: str) -> None:
+            del key, content, content_type
+            raise RuntimeError("recording upload failed")
+
+    event = {
+        "reading_id": "job-1",
+        "owner_user_id": "user-1",
+        "original_text_key": "users/user-1/readings/job-1/original.txt",
+    }
+    repo = FakeRepo()
+
+    with pytest.raises(RuntimeError, match="recording upload failed"):
+        asyncio.run(
+            process_reading(
+                event,
+                Settings(readings_table_name="table", files_bucket_name="bucket"),
+                FailingUploadStorage(),
+                repo,
+                fake_synthesize,
+            )
+        )
+
+    assert repo.transitions[-1] == (
+        "failed",
+        {"failed_stage": "merging_audio", "error": "recording upload failed"},
+    )
+
+
+def test_processing_truncates_failure_error_to_500_characters() -> None:
+    message = "x" * 501
+
+    async def fail_with_long_message(*_args: object) -> None:
+        raise RuntimeError(message)
+
+    event = {
+        "reading_id": "job-1",
+        "owner_user_id": "user-1",
+        "original_text_key": "users/user-1/readings/job-1/original.txt",
+    }
+    repo = FakeRepo()
+
+    with pytest.raises(RuntimeError, match="x{501}"):
+        asyncio.run(
+            process_reading(
+                event,
+                Settings(readings_table_name="table", files_bucket_name="bucket"),
+                FakeStorage(),
+                repo,
+                fail_with_long_message,
+            )
+        )
+
+    status, metadata = repo.transitions[-1]
+    assert status == "failed"
+    assert metadata == {"failed_stage": "generating_audio", "error": "x" * 500}
+
+
+def test_reading_status_values() -> None:
+    assert [status.value for status in models.ReadingStatus] == [
+        "uploaded",
+        "normalizing",
+        "generating_audio",
+        "merging_audio",
+        "completed",
+        "failed",
+        "failed_to_start",
+    ]
 
 
 def test_processing_single_chunk_reports_chunk_count() -> None:
