@@ -331,3 +331,37 @@ def test_processing_routes_through_ai_normalize_when_enabled(monkeypatch) -> Non
     assert result == {"status": "completed"}
     assert storage.texts[corrected_text_key] == expected
     assert storage.bytes[recording_key].endswith(expected.encode())
+
+
+def test_processing_falls_back_to_regex_when_ai_normalize_raises(monkeypatch) -> None:
+    async def failing_ai_normalize(_text: str) -> str:
+        raise RuntimeError("ai provider failed")
+
+    monkeypatch.setattr("app.processing.ai_normalize", failing_ai_normalize)
+    event = {
+        "reading_id": "job-1",
+        "owner_user_id": "user-1",
+        "original_text_key": "users/user-1/readings/job-1/original.txt",
+    }
+    storage = FakeStorage()
+    repo = FakeRepo()
+
+    result = asyncio.run(
+        process_reading(
+            event,
+            Settings(
+                readings_table_name="table",
+                files_bucket_name="bucket",
+                ai_normalization_enabled=True,
+            ),
+            storage,
+            repo,
+            fake_synthesize,
+        )
+    )
+
+    corrected_text_key = storage.corrected_text_key("user-1", "job-1")
+    assert result == {"status": "completed"}
+    assert storage.texts[corrected_text_key] == "Ala ma kota."
+    assert repo.completed is not None
+    assert repo.completed["metadata"]["normalization"] == "regex-v1"

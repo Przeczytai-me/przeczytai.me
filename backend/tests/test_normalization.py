@@ -125,3 +125,56 @@ def test_ai_normalize_is_async_noop() -> None:
 
     assert inspect.iscoroutinefunction(ai_normalize)
     assert asyncio.run(ai_normalize(text)) == text
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("„Ala” powiedziała “cześć”.", '"Ala" powiedziała "cześć".'),
+        ("«Zdanie» w cudzysłowie.", '"Zdanie" w cudzysłowie.'),
+        ("To ‚jest' ‘przykład’.", "To 'jest' 'przykład'."),
+        ("Zakres 2020–2024 i pauza — tak, myślnik ― też.", "Zakres 2020-2024 i pauza - tak, myślnik - też."),
+        ('Zwykłe "cudzysłowy" i \'apostrofy\' bez zmian.', 'Zwykłe "cudzysłowy" i \'apostrofy\' bez zmian.'),
+    ],
+)
+def test_normalize_quotes_and_dashes(source: str, expected: str) -> None:
+    assert normalize(source) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "„Ala” powiedziała “cześć”.",
+        "Zakres 2020–2024 i pauza — tak, myślnik ― też.",
+    ],
+)
+def test_normalize_quotes_and_dashes_is_idempotent(text: str) -> None:
+    normalized = normalize(text)
+
+    assert normalize(normalized) == normalized
+
+
+def test_normalize_url_preserves_trailing_polish_closing_quote() -> None:
+    assert normalize("„Zobacz https://example.com”") == '"Zobacz link"'
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("W 2024 r. wydano książkę.", "W 2024 roku wydano książkę."),
+        ("W 1999 r. urodził się.", "W 1999 roku urodził się."),
+    ],
+)
+def test_normalize_year_abbreviation(source: str, expected: str) -> None:
+    assert normalize(source) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Proszę o r. wydania dokumentu.",
+        "Litera r. nie jest rokiem.",
+    ],
+)
+def test_normalize_year_abbreviation_requires_preceding_number(text: str) -> None:
+    assert normalize(text) == text
