@@ -190,3 +190,70 @@ def test_chunk_indices_are_gapless_and_zero_based() -> None:
 def test_default_max_chunk_chars_is_3000() -> None:
     """Default the maximum chunk length to 3000 characters."""
     assert Settings(_env_file=None).max_chunk_chars == 3000
+
+
+def test_oversized_word_is_split_exactly_at_the_limit() -> None:
+    """Hard-split a single word at the character limit when no whitespace exists."""
+    chunks = split_text("abcdef", max_chunk_chars=3)
+
+    assert [chunk.text for chunk in chunks] == ["abc", "def"]
+
+
+def test_oversized_word_within_text_stays_within_the_limit() -> None:
+    """Keep every chunk within the limit even when a word alone exceeds it."""
+    text = "abcdef ghij"
+
+    chunks = split_text(text, max_chunk_chars=3)
+
+    assert all(chunk.char_count <= 3 for chunk in chunks)
+    assert_no_text_lost(text, chunks)
+
+
+def test_giant_unbroken_word_stays_within_the_limit() -> None:
+    """Hard-split a very long unbroken word into chunks within the limit."""
+    text = "a" * 10_000
+
+    chunks = split_text(text, max_chunk_chars=3000)
+
+    assert all(chunk.char_count <= 3000 for chunk in chunks)
+    assert_no_text_lost(text, chunks)
+
+
+def test_minimal_limit_of_one_does_not_loop_forever() -> None:
+    """Produce single-character chunks without hanging when the limit is 1."""
+    chunks = split_text("abc def", max_chunk_chars=1)
+
+    assert all(chunk.char_count == 1 for chunk in chunks)
+
+
+def test_sentence_initial_capitalized_abbreviation_does_not_end_a_sentence() -> None:
+    """Keep a capitalized sentence-initial abbreviation attached to its sentence."""
+    text = "Np. Aa bbb cc dd ee ff"
+
+    chunks = split_text(text, max_chunk_chars=10)
+
+    assert all(chunk.text.strip() != "Np." for chunk in chunks)
+
+
+def test_parenthesized_abbreviation_does_not_end_a_sentence() -> None:
+    """Keep a parenthesized abbreviation from causing a mid-paragraph split."""
+    prefix = "Zdanie (np. tak) dalej"
+    text = f"{prefix} ciągnie się przez niezwykle rozbudowany dokument"
+
+    chunks = split_text(text, max_chunk_chars=len(prefix))
+
+    assert "dalej" in chunks[0].text
+    assert_no_text_lost(text, chunks)
+
+
+def test_splitting_a_long_run_of_sentence_punctuation_is_fast() -> None:
+    """Scan long paragraphs in roughly linear time."""
+    import time
+
+    text = "." * 32_000 + " A"
+
+    start = time.perf_counter()
+    split_text(text, max_chunk_chars=100)
+    elapsed = time.perf_counter() - start
+
+    assert elapsed < 2.0
