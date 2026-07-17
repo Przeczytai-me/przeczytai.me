@@ -225,3 +225,106 @@ def test_processing_marks_failed_when_synthesis_fails() -> None:
         "metadata": {"processing_error": "RuntimeError"},
     }
     assert repo.completed is None
+
+
+def test_processing_normalizes_dirty_text() -> None:
+    from app.normalization import normalize as real_normalize
+
+    event = {
+        "reading_id": "job-1",
+        "owner_user_id": "user-1",
+        "original_text_key": "users/user-1/readings/job-1/original.txt",
+    }
+    storage = FakeStorage()
+    original_text = "  Np.  Ala\tma kota!!!  "
+    storage.texts[event["original_text_key"]] = original_text
+    repo = FakeRepo()
+
+    result = asyncio.run(
+        process_reading(
+            event,
+            Settings(readings_table_name="table", files_bucket_name="bucket"),
+            storage,
+            repo,
+            fake_synthesize,
+        )
+    )
+
+    expected = real_normalize(original_text)
+    corrected_text_key = storage.corrected_text_key("user-1", "job-1")
+    recording_key = storage.recording_key("user-1", "job-1")
+    assert result == {"status": "completed"}
+    assert storage.texts[corrected_text_key] != original_text
+    assert storage.texts[corrected_text_key] == expected
+    assert storage.bytes[recording_key].endswith(expected.encode())
+    assert repo.completed is not None
+    assert repo.completed["metadata"]["normalization"] == "regex-v1"
+
+
+def test_processing_falls_back_when_normalize_raises(monkeypatch) -> None:
+    def raise_normalization_error(_text: str) -> str:
+        raise RuntimeError("normalization failed")
+
+    monkeypatch.setattr("app.processing.normalize", raise_normalization_error)
+    event = {
+        "reading_id": "job-1",
+        "owner_user_id": "user-1",
+        "original_text_key": "users/user-1/readings/job-1/original.txt",
+    }
+    storage = FakeStorage()
+    original_text = "  Nie zmieniaj mnie!!!  "
+    storage.texts[event["original_text_key"]] = original_text
+    repo = FakeRepo()
+
+    result = asyncio.run(
+        process_reading(
+            event,
+            Settings(readings_table_name="table", files_bucket_name="bucket"),
+            storage,
+            repo,
+            fake_synthesize,
+        )
+    )
+
+    corrected_text_key = storage.corrected_text_key("user-1", "job-1")
+    recording_key = storage.recording_key("user-1", "job-1")
+    assert result == {"status": "completed"}
+    assert storage.texts[corrected_text_key] == original_text
+    assert storage.bytes[recording_key].endswith(original_text.encode())
+    assert repo.completed is not None
+    assert repo.completed["metadata"]["normalization"] == "failed"
+
+
+def test_processing_routes_through_ai_normalize_when_enabled(monkeypatch) -> None:
+    async def add_ai_marker(text: str) -> str:
+        return f"{text} [AI]"
+
+    monkeypatch.setattr("app.processing.ai_normalize", add_ai_marker)
+    event = {
+        "reading_id": "job-1",
+        "owner_user_id": "user-1",
+        "original_text_key": "users/user-1/readings/job-1/original.txt",
+    }
+    storage = FakeStorage()
+    repo = FakeRepo()
+
+    result = asyncio.run(
+        process_reading(
+            event,
+            Settings(
+                readings_table_name="table",
+                files_bucket_name="bucket",
+                ai_normalization_enabled=True,
+            ),
+            storage,
+            repo,
+            fake_synthesize,
+        )
+    )
+
+    expected = "Ala ma kota. [AI]"
+    corrected_text_key = storage.corrected_text_key("user-1", "job-1")
+    recording_key = storage.recording_key("user-1", "job-1")
+    assert result == {"status": "completed"}
+    assert storage.texts[corrected_text_key] == expected
+    assert storage.bytes[recording_key].endswith(expected.encode())
