@@ -3,9 +3,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from app.audio import merge_mp3_files
 from app.config import Settings, get_settings
 from app.normalization import ai_normalize, normalize
 from app.repositories.readings import ReadingRepository
+from app.splitting import split_text
 from app.storage import FileStorage
 from app.tts import (
     ensure_tts_provider_available,
@@ -36,7 +38,6 @@ async def process_reading(
     owner_user_id = str(event["owner_user_id"])
     original_text_key = str(event["original_text_key"])
     selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
-    recording_path: Path | None = None
 
     existing = repo.get(owner_user_id, reading_id)
     if existing and existing.get("status") in TERMINAL_READING_STATUSES:
@@ -69,6 +70,7 @@ async def process_reading(
         corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id)
         recording_key = storage.recording_key(owner_user_id, reading_id, provider.output_extension)
         recording_path = Path("/tmp") / f"{reading_id}.{provider.output_extension}"
+        chunks = split_text(corrected, settings.max_chunk_chars)
 
         logger.info(
             "processing reading",
@@ -81,10 +83,21 @@ async def process_reading(
         )
 
         storage.put_text(corrected_text_key, corrected, "text/markdown; charset=utf-8")
-        await synthesize(corrected, str(recording_path), selection, settings)
+        chunk_paths = [
+            Path("/tmp") / f"{reading_id}-{chunk.index:04d}.mp3" for chunk in chunks
+        ]
+        for chunk, chunk_path in zip(chunks, chunk_paths, strict=True):
+            chunk_text = corrected if len(chunks) == 1 else chunk.text
+            await synthesize(chunk_text, str(chunk_path), selection, settings)
+        merge_mp3_files(chunk_paths, recording_path)
         storage.put_bytes(recording_key, recording_path.read_bytes(), provider.content_type)
 
-        metadata = {**tts_metadata(selection), "normalization": normalization_status}
+        metadata = {
+            **tts_metadata(selection),
+            "normalization": normalization_status,
+            "chunks": len(chunks),
+            "merge": "byte-concat-v1",
+        }
         repo.mark_completed(
             owner_user_id,
             reading_id,
@@ -111,8 +124,8 @@ async def process_reading(
             )
         return {"status": "failed"}
     finally:
-        if recording_path:
-            recording_path.unlink(missing_ok=True)
+        for temporary_path in Path("/tmp").glob(f"{reading_id}*"):
+            temporary_path.unlink(missing_ok=True)
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, str]:
