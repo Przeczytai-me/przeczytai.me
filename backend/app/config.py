@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     max_text_chars: int = 100_000
+    max_chunk_chars: int = 3000
     readings_table_name: str = Field(
         default="local-readings",
         validation_alias=AliasChoices(
