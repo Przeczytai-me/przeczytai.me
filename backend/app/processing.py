@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import Settings, get_settings
+from app.normalization import ai_normalize, normalize
 from app.repositories.readings import ReadingRepository
 from app.storage import FileStorage
 from app.tts import (
@@ -45,6 +46,26 @@ async def process_reading(
         ensure_tts_provider_available(selection, settings)
         original_text = storage.get_text(original_text_key)
         provider = validate_tts_input(original_text, selection)
+        try:
+            corrected = normalize(original_text)
+            normalization_status = "regex-v1"
+        except Exception:
+            logger.exception(
+                "text normalization failed",
+                extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
+            )
+            corrected = original_text
+            normalization_status = "failed"
+
+        if settings.ai_normalization_enabled and normalization_status != "failed":
+            try:
+                corrected = await ai_normalize(corrected)
+            except Exception:
+                logger.exception(
+                    "AI text normalization failed",
+                    extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
+                )
+
         corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id)
         recording_key = storage.recording_key(owner_user_id, reading_id, provider.output_extension)
         recording_path = Path("/tmp") / f"{reading_id}.{provider.output_extension}"
@@ -59,16 +80,17 @@ async def process_reading(
             },
         )
 
-        storage.put_text(corrected_text_key, original_text, "text/markdown; charset=utf-8")
-        await synthesize(original_text, str(recording_path), selection, settings)
+        storage.put_text(corrected_text_key, corrected, "text/markdown; charset=utf-8")
+        await synthesize(corrected, str(recording_path), selection, settings)
         storage.put_bytes(recording_key, recording_path.read_bytes(), provider.content_type)
 
+        metadata = {**tts_metadata(selection), "normalization": normalization_status}
         repo.mark_completed(
             owner_user_id,
             reading_id,
             corrected_text_key,
             recording_key,
-            tts_metadata(selection),
+            metadata,
         )
         return {"status": "completed"}
     except Exception as exc:
