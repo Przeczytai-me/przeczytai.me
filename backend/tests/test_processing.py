@@ -3,6 +3,7 @@ from pathlib import Path
 
 from app.config import Settings
 from app.processing import process_reading
+from app.splitting import split_text
 from app.tts import DEFAULT_TTS_VENDOR, EDGE_TTS_VOICE, OPENAI_TTS_MODEL, TtsSelection
 
 
@@ -120,6 +121,8 @@ def test_processing_generates_same_text_and_recording() -> None:
             "processor": DEFAULT_TTS_VENDOR,
             "voice": EDGE_TTS_VOICE,
             "normalization": "regex-v1",
+            "chunks": 1,
+            "merge": "byte-concat-v1",
         },
     }
 
@@ -154,6 +157,8 @@ def test_processing_uses_requested_voice() -> None:
         "processor": DEFAULT_TTS_VENDOR,
         "voice": "en-US-EmmaMultilingualNeural",
         "normalization": "regex-v1",
+        "chunks": 1,
+        "merge": "byte-concat-v1",
     }
 
 
@@ -192,6 +197,8 @@ def test_processing_uses_requested_openai_vendor() -> None:
         "voice": "coral",
         "model": OPENAI_TTS_MODEL,
         "normalization": "regex-v1",
+        "chunks": 1,
+        "merge": "byte-concat-v1",
     }
 
 
@@ -365,3 +372,136 @@ def test_processing_falls_back_to_regex_when_ai_normalize_raises(monkeypatch) ->
     assert storage.texts[corrected_text_key] == "Ala ma kota."
     assert repo.completed is not None
     assert repo.completed["metadata"]["normalization"] == "regex-v1"
+
+
+def test_processing_synthesizes_and_merges_multiple_chunks_in_order() -> None:
+    reading_id = "stage-3-multi-chunk"
+    original_text_key = f"users/user-1/readings/{reading_id}/original.txt"
+    text = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n\nFourth paragraph."
+    event = {
+        "reading_id": reading_id,
+        "owner_user_id": "user-1",
+        "original_text_key": original_text_key,
+    }
+    storage = FakeStorage()
+    storage.texts[original_text_key] = text
+    repo = FakeRepo()
+    settings = Settings(
+        readings_table_name="table",
+        files_bucket_name="bucket",
+        max_chunk_chars=20,
+    )
+    expected_chunks = split_text(text, settings.max_chunk_chars)
+    synthesized_texts: list[str] = []
+    output_names: list[str] = []
+
+    async def tagged_synthesize(
+        chunk_text: str,
+        output_path: str,
+        _selection: TtsSelection,
+        _settings: Settings | None = None,
+    ) -> None:
+        chunk_index = len(synthesized_texts)
+        synthesized_texts.append(chunk_text)
+        output_names.append(Path(output_path).name)
+        Path(output_path).write_bytes(f"<chunk-{chunk_index}>".encode())
+
+    result = asyncio.run(
+        process_reading(
+            event,
+            settings,
+            storage,
+            repo,
+            tagged_synthesize,
+        )
+    )
+
+    recording_key = storage.recording_key("user-1", reading_id)
+    assert result == {"status": "completed"}
+    assert storage.bytes[recording_key] == (
+        b"<chunk-0><chunk-1><chunk-2><chunk-3>"
+    )
+    assert synthesized_texts == [chunk.text for chunk in expected_chunks]
+    assert output_names == [
+        f"{reading_id}-{chunk.index:04d}.mp3" for chunk in expected_chunks
+    ]
+    assert repo.completed is not None
+    assert repo.completed["metadata"]["chunks"] == len(expected_chunks)
+    assert len(expected_chunks) >= 3
+    assert repo.completed["metadata"]["merge"] == "byte-concat-v1"
+    assert list(Path("/tmp").glob(f"{reading_id}*")) == []
+
+
+def test_processing_cleans_up_when_second_chunk_synthesis_fails() -> None:
+    reading_id = "stage-3-second-chunk-failure"
+    original_text_key = f"users/user-1/readings/{reading_id}/original.txt"
+    event = {
+        "reading_id": reading_id,
+        "owner_user_id": "user-1",
+        "original_text_key": original_text_key,
+    }
+    storage = FakeStorage()
+    storage.texts[original_text_key] = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+    repo = FakeRepo()
+    calls = 0
+
+    async def fail_on_second_chunk(
+        _text: str,
+        output_path: str,
+        _selection: TtsSelection,
+        _settings: Settings | None = None,
+    ) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("second chunk failed")
+        Path(output_path).write_bytes(b"audio")
+
+    result = asyncio.run(
+        process_reading(
+            event,
+            Settings(
+                readings_table_name="table",
+                files_bucket_name="bucket",
+                max_chunk_chars=20,
+            ),
+            storage,
+            repo,
+            fail_on_second_chunk,
+        )
+    )
+
+    recording_key = storage.recording_key("user-1", reading_id)
+    assert result == {"status": "failed"}
+    assert recording_key not in storage.bytes
+    assert repo.failed == {
+        "owner_user_id": "user-1",
+        "reading_id": reading_id,
+        "metadata": {"processing_error": "RuntimeError"},
+    }
+    assert calls == 2
+    assert list(Path("/tmp").glob(f"{reading_id}*")) == []
+
+
+def test_processing_single_chunk_reports_chunk_count() -> None:
+    event = {
+        "reading_id": "job-1",
+        "owner_user_id": "user-1",
+        "original_text_key": "users/user-1/readings/job-1/original.txt",
+    }
+    storage = FakeStorage()
+    repo = FakeRepo()
+
+    result = asyncio.run(
+        process_reading(
+            event,
+            Settings(readings_table_name="table", files_bucket_name="bucket"),
+            storage,
+            repo,
+            fake_synthesize,
+        )
+    )
+
+    assert result == {"status": "completed"}
+    assert repo.completed is not None
+    assert repo.completed["metadata"]["chunks"] == 1
