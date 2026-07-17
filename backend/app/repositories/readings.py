@@ -7,6 +7,8 @@ import ulid
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
+from app.models import ReadingStatus
+
 
 def _now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -50,7 +52,7 @@ class ReadingRepository:
             "recording_key": None,
             "vendor": vendor,
             "voice": voice,
-            "status": "processing",
+            "status": ReadingStatus.UPLOADED.value,
             "metadata": {},
             "char_count": char_count,
             "created_at": now,
@@ -95,17 +97,48 @@ class ReadingRepository:
             raise ProcessingStartError
 
     def mark_processing_start_failed(self, owner_user_id: str, reading_id: str) -> None:
-        self.table.update_item(
-            Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"},
-            UpdateExpression=(
-                "SET #status = :status, metadata = :metadata, updated_at = :updated_at"
-            ),
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={
-                ":status": "failed_to_start",
-                ":metadata": {"processing_start_error": "lambda_invoke_failed"},
-                ":updated_at": _now(),
-            },
+        self.set_status(
+            owner_user_id,
+            reading_id,
+            ReadingStatus.FAILED_TO_START,
+            {"processing_start_error": "lambda_invoke_failed"},
+        )
+
+    def set_status(
+        self,
+        owner_user_id: str,
+        reading_id: str,
+        status: ReadingStatus | str,
+        metadata_patch: dict[str, object] | None = None,
+    ) -> None:
+        if metadata_patch and not self._update_existing(
+            owner_user_id,
+            reading_id,
+            "SET metadata = if_not_exists(metadata, :empty_metadata)",
+            {},
+            {":empty_metadata": {}},
+        ):
+            return
+
+        names = {"#status": "status"}
+        values: dict[str, object] = {
+            ":status": str(status),
+            ":updated_at": _now(),
+        }
+        updates = ["#status = :status", "updated_at = :updated_at"]
+        for index, (key, value) in enumerate((metadata_patch or {}).items()):
+            name = f"#metadata_key_{index}"
+            placeholder = f":metadata_value_{index}"
+            names[name] = key
+            values[placeholder] = value
+            updates.append(f"metadata.{name} = {placeholder}")
+
+        self._update_existing(
+            owner_user_id,
+            reading_id,
+            "SET " + ", ".join(updates),
+            names,
+            values,
         )
 
     def mark_completed(
@@ -116,52 +149,21 @@ class ReadingRepository:
         recording_key: str,
         metadata: dict[str, object],
     ) -> None:
-        try:
-            self.table.update_item(
-                Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"},
-                UpdateExpression=(
-                    "SET #status = :status, corrected_text_key = :corrected_text_key, "
-                    "recording_key = :recording_key, metadata = :metadata, updated_at = :updated_at"
-                ),
-                ConditionExpression="attribute_exists(reading_id)",
-                ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues={
-                    ":status": "completed",
-                    ":corrected_text_key": corrected_text_key,
-                    ":recording_key": recording_key,
-                    ":metadata": metadata,
-                    ":updated_at": _now(),
-                },
-            )
-        except ClientError as exc:
-            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
-                return
-            raise
-
-    def mark_failed(
-        self,
-        owner_user_id: str,
-        reading_id: str,
-        metadata: dict[str, object],
-    ) -> None:
-        try:
-            self.table.update_item(
-                Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"},
-                UpdateExpression=(
-                    "SET #status = :status, metadata = :metadata, updated_at = :updated_at"
-                ),
-                ConditionExpression="attribute_exists(reading_id)",
-                ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues={
-                    ":status": "failed",
-                    ":metadata": metadata,
-                    ":updated_at": _now(),
-                },
-            )
-        except ClientError as exc:
-            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
-                return
-            raise
+        self._update_existing(
+            owner_user_id,
+            reading_id,
+            "SET #status = :status, corrected_text_key = :corrected_text_key, "
+            "recording_key = :recording_key, metadata = :metadata, "
+            "updated_at = :updated_at",
+            {"#status": "status"},
+            {
+                ":status": str(ReadingStatus.COMPLETED),
+                ":corrected_text_key": corrected_text_key,
+                ":recording_key": recording_key,
+                ":metadata": metadata,
+                ":updated_at": _now(),
+            },
+        )
 
     def list(
         self, owner_user_id: str, limit: int, cursor: str | None
@@ -191,6 +193,30 @@ class ReadingRepository:
             Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"}
         )
         return response.get("Item")
+
+    def _update_existing(
+        self,
+        owner_user_id: str,
+        reading_id: str,
+        update_expression: str,
+        names: dict[str, str],
+        values: dict[str, object],
+    ) -> bool:
+        request = {
+            "Key": {"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"},
+            "UpdateExpression": update_expression,
+            "ConditionExpression": "attribute_exists(reading_id)",
+            "ExpressionAttributeValues": values,
+        }
+        if names:
+            request["ExpressionAttributeNames"] = names
+        try:
+            self.table.update_item(**request)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
 
 
 class ProcessingStartError(Exception):

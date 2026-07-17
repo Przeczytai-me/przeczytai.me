@@ -5,6 +5,7 @@ from typing import Any
 
 from app.audio import merge_mp3_files
 from app.config import Settings, get_settings
+from app.models import ReadingStatus
 from app.normalization import ai_normalize, normalize
 from app.repositories.readings import ReadingRepository
 from app.splitting import split_text
@@ -38,6 +39,7 @@ async def process_reading(
     owner_user_id = str(event["owner_user_id"])
     original_text_key = str(event["original_text_key"])
     selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
+    current_stage = ReadingStatus.NORMALIZING
 
     existing = repo.get(owner_user_id, reading_id)
     try:
@@ -47,6 +49,7 @@ async def process_reading(
         ensure_tts_provider_available(selection, settings)
         original_text = storage.get_text(original_text_key)
         provider = validate_tts_input(original_text, selection)
+        repo.set_status(owner_user_id, reading_id, current_stage)
         try:
             corrected = normalize(original_text)
             normalization_status = "regex-v1"
@@ -86,8 +89,12 @@ async def process_reading(
         chunk_paths = [
             Path("/tmp") / f"{reading_id}-{chunk.index:04d}.mp3" for chunk in chunks
         ]
+        current_stage = ReadingStatus.GENERATING_AUDIO
+        repo.set_status(owner_user_id, reading_id, current_stage)
         for chunk, chunk_path in zip(chunks, chunk_paths, strict=True):
             await synthesize(chunk.text, str(chunk_path), selection, settings)
+        current_stage = ReadingStatus.MERGING_AUDIO
+        repo.set_status(owner_user_id, reading_id, current_stage)
         merge_mp3_files(chunk_paths, recording_path)
         storage.put_bytes(recording_key, recording_path.read_bytes(), provider.content_type)
 
@@ -115,13 +122,18 @@ async def process_reading(
             },
         )
         try:
-            repo.mark_failed(owner_user_id, reading_id, {"processing_error": type(exc).__name__})
+            repo.set_status(
+                owner_user_id,
+                reading_id,
+                ReadingStatus.FAILED,
+                {"failed_stage": current_stage.value, "error": str(exc)[:500]},
+            )
         except Exception:
             logger.exception(
                 "failed to mark reading failed",
                 extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
             )
-        return {"status": "failed"}
+        raise
     finally:
         for temporary_path in Path("/tmp").glob(f"{reading_id}*"):
             temporary_path.unlink(missing_ok=True)
