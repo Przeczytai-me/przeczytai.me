@@ -30,3 +30,24 @@ pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+### Frontend API mocks
+
+Set `NEXT_PUBLIC_API_MOCKING=true` in `frontend/.env.local` to enable the
+development-only Mock Service Worker layer. Existing health and readings API
+routes continue to use the real backend. Missing jobs, retry, original-text,
+timing-map, settings, and TTS-options routes are mocked in the browser.
+
+The mocked `POST /api/v1/readings` contract accepts optional document-level
+abbreviation readings and forwards the currently supported fields to the real
+endpoint:
+
+```json
+{
+  "original_text": "Np. Ala ma kota.",
+  "voice": "Zofia",
+  "abbreviation_readings": [
+    { "abbreviation": "Np.", "read_as": "Na przykład" }
+  ]
+}
+```
