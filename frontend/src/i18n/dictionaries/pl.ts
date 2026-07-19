@@ -166,5 +166,95 @@ export const pl = {
       creating: "Tworzenie",
       created: "Utworzono",
     },
+    settings: {
+      heading: "Ustawienia",
+      description:
+        "Ustaw domyślne wartości używane przy kolejnych dokumentach.",
+      temporaryDescription:
+        "Aktualnie zapis działa lokalnie w tej przeglądarce, dopóki backend nie udostępni profilu ustawień.",
+      futureOnlyNotice:
+        "Zmiany dotyczą tylko przyszłych dokumentów. Istniejące nagrania i przetworzone teksty nie zostaną zmienione.",
+      resetConfirm:
+        "Przywrócić domyślne ustawienia? Niezapisane zmiany w formularzu zostaną zastąpione.",
+      privacyRetentionTitle: "Retencja nieaktywnych kont",
+      privacyRetentionDescription:
+        "Dokumenty na nieaktywnych kontach mogą być usuwane po 365 dniach bez aktywności.",
+      abbreviationsEmpty: "Nie dodano jeszcze domyślnych odczytów skrótów.",
+      actions: {
+        addAbbreviation: "Dodaj wiersz",
+        deleteAllDocuments: "Usuń wszystkie dokumenty",
+        discard: "Odrzuć",
+        previewVoice: "Odsłuchaj głos",
+        removeAbbreviation: "Usuń wiersz",
+        reset: "Przywróć domyślne",
+        save: "Zapisz ustawienia",
+      },
+      fields: {
+        abbreviation: "Skrót",
+        actions: "Akcje",
+        defaultModel: "Domyślny model TTS",
+        defaultVoice: "Domyślny polski głos",
+        expansion: "Odczyt",
+        fallbackModel: "Model zapasowy",
+        highlightBehavior: "Podświetlanie zdań",
+        playbackSpeed: "Domyślna prędkość",
+        pronunciationStyle: "Styl wymowy",
+        textFormat: "Format tekstu",
+      },
+      placeholders: {
+        abbreviation: "np. prof.",
+        expansion: "np. profesor",
+      },
+      sections: {
+        abbreviations: {
+          title: "Odczyty skrótów",
+          description:
+            "Zapisz domyślne wymowy skrótów, które chcesz stosować w nowych dokumentach.",
+        },
+        exports: {
+          title: "Eksporty",
+          description: "Ustaw domyślny format tekstu dla przyszłych eksportów.",
+        },
+        model: {
+          title: "Model czytania",
+          description:
+            "Wybierz model główny i zapasowy dla nowych zadań przetwarzania.",
+        },
+        playback: {
+          title: "Odtwarzanie",
+          description:
+            "Dostosuj prędkość startową i zachowanie podświetlania zdań.",
+        },
+        privacy: {
+          title: "Prywatność",
+          description:
+            "Sprawdź zasady retencji i akcje dotyczące przechowywanych dokumentów.",
+          linkLabel: "Polityka prywatności",
+        },
+        voice: {
+          title: "Głos",
+          description:
+            "Ustaw domyślny polski głos i sposób wymowy dla nowych nagrań.",
+        },
+      },
+      status: {
+        discarded: "Zmiany odrzucone.",
+        editing: "Masz niezapisane zmiany.",
+        ready: "Ustawienia gotowe.",
+        reset: "Domyślne ustawienia przywrócone i zapisane.",
+        saved: "Ustawienia zapisane.",
+      },
+      unsupported: {
+        abbreviations:
+          "Te reguły zapisują się w localStorage przeglądarki po użyciu paska zapisu. Backend nie obsługuje jeszcze globalnych odczytów skrótów.",
+        deleteAllDocuments:
+          "Akcja będzie dostępna po dodaniu bezpiecznego endpointu usuwania wszystkich dokumentów.",
+        voicePreview:
+          "Podgląd głosu wymaga endpointu generowania krótkiej próbki audio.",
+      },
+      unsavedBar: {
+        message: "Masz niezapisane zmiany w ustawieniach.",
+      },
+    },
   },
 } as const;
