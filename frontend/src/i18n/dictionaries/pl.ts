@@ -12,13 +12,13 @@ export const pl = {
       openApp: "Przejdź do dokumentów",
       signUp: "Utwórz konto",
       signIn: "Zaloguj się",
-      viewDocs: "Zobacz dokumentację",
+      viewDocs: "Centrum pomocy",
     },
     demo: {
       label: "Przykład pracy aplikacji PrzeczytAI.me",
     },
     docsCallout: {
-      text: "Jakieś niejasności? Sprawdź naszą dokumentację.",
+      text: "Potrzebujesz pomocy? Zajrzyj do prostych przewodników po aplikacji.",
     },
     capabilities: {
       heading: "Co robi ta aplikacja?",
@@ -94,6 +94,19 @@ export const pl = {
     privateWorkspaceNote:
       "Dokumenty są przechowywane w prywatnej przestrzeni użytkownika.",
   },
+  docs: {
+    backToHome: "Strona główna",
+    uiTranslations: {
+      "Close Sidebar(sidebar)(aria-label)": "Zamknij panel boczny",
+      "Collapse Sidebar(sidebar)(aria-label)": "Zwiń panel boczny",
+      "Copy Anchor Link(heading anchor)(aria-label)":
+        "Kopiuj odnośnik do sekcji",
+      "Next Page(pagination)": "Następna strona",
+      "On this page(table of contents)": "Na tej stronie",
+      "Open Sidebar(sidebar)(aria-label)": "Otwórz panel boczny",
+      "Previous Page(pagination)": "Poprzednia strona",
+    },
+  },
   app: {
     notImplementedYet: "not implemented yet",
     shell: {
@@ -105,7 +118,7 @@ export const pl = {
         newDocument: "Nowy dokument",
         jobs: "Zadania",
         settings: "Ustawienia",
-        documentation: "Dokumentacja",
+        documentation: "Centrum pomocy",
       },
       sidebar: {
         collapseLabel: "Zwiń panel boczny",
