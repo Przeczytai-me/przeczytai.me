@@ -63,7 +63,7 @@ export const AppShell = ({ children }: AppShellProps) => {
       <div
         className={cn(
           "flex min-h-screen flex-col transition-[padding-left]",
-          isCollapsed ? "pl-16" : "pl-64",
+          isCollapsed ? "pl-16" : "pl-52",
         )}
       >
         <AppTopbar currentTitle={currentTitle} documentId={documentId} />
@@ -84,6 +84,10 @@ export const AppShell = ({ children }: AppShellProps) => {
 const getCurrentTitle = (pathname: string, documentId?: string) => {
   if (documentId) {
     return `${copy.documentTitlePrefix} ${documentId}`;
+  }
+
+  if (pathname === "/app/account" || pathname.startsWith("/app/account/")) {
+    return copy.navigation.account;
   }
 
   const item = appNavigationItems
