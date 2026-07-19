@@ -1,7 +1,7 @@
-import { dictionary } from "@/i18n/dictionaries";
+import { SettingsPageClient } from "./settings-page-client";
 
 const SettingsPage = () => {
-  return <p>{dictionary.app.notImplementedYet}</p>;
+  return <SettingsPageClient />;
 };
 
 export default SettingsPage;
