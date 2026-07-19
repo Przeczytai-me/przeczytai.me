@@ -114,6 +114,7 @@ export const pl = {
       processingStatus: "Brak aktywnego przetwarzania",
       documentTitlePrefix: "Dokument",
       navigation: {
+        account: "Konto",
         documents: "Dokumenty",
         newDocument: "Nowy dokument",
         jobs: "Zadania",
@@ -178,6 +179,35 @@ export const pl = {
       create: "czytAI",
       creating: "Tworzenie",
       created: "Utworzono",
+    },
+    account: {
+      heading: "Konto",
+      description:
+        "Zarządzaj profilem, metodami logowania, aktywną sesją i danymi konta.",
+      email: {
+        title: "Adres e-mail",
+        description: "Adres używany do logowania i kontaktu z aplikacją.",
+        label: "Podstawowy adres e-mail",
+        loading: "Ładowanie adresu e-mail...",
+        unavailable: "Brak podstawowego adresu e-mail",
+        manageAccount: "Zarządzaj profilem i metodami logowania",
+      },
+      session: {
+        title: "Sesja",
+        description:
+          "Wylogowanie zakończy bieżącą sesję i przeniesie Cię na stronę główną.",
+        signOut: "Wyloguj się",
+      },
+      data: {
+        title: "Prywatność i usunięcie danych",
+        description:
+          "Sprawdź politykę prywatności albo wyślij prośbę o usunięcie konta i powiązanych danych.",
+        privacyPolicy: "Polityka prywatności",
+        deletionRequest: "Poproś o usunięcie konta i danych",
+        deletionRequestSubject: "Prośba o usunięcie konta i danych",
+        deletionRequestNote:
+          "Bezpośrednie usuwanie wszystkich danych nie jest jeszcze obsługiwane przez backend. Prośba zostanie wysłana do zespołu PrzeczytAI.me.",
+      },
     },
     settings: {
       heading: "Ustawienia",

@@ -3,7 +3,6 @@
 import { UserButton } from "@clerk/nextjs";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { SignOutButton } from "@/components/sign-out-button";
 import { dictionary } from "@/i18n/dictionaries";
 
 const copy = dictionary.app.shell;
@@ -44,8 +43,10 @@ export const AppTopbar = ({ currentTitle, documentId }: AppTopbarProps) => {
           <span className="size-2 rounded-full bg-emerald-500" />
           <span>{copy.processingStatus}</span>
         </div>
-        <UserButton />
-        <SignOutButton className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted" />
+        <UserButton
+          userProfileMode="navigation"
+          userProfileUrl="/app/account"
+        />
       </div>
     </header>
   );
