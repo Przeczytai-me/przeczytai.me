@@ -136,11 +136,13 @@ The tag triggers this sequence:
 6. retries against the public `/api/v1/health` endpoint;
 7. a deployment summary in the GitHub Actions run.
 
-The workflow is loaded from the default branch, but it checks out and deploys
-the commit referenced by the new tag. Therefore, `v*` tags can deploy commits
-from any branch, including commits that do not contain the workflow file.
-Creating an ordinary branch, pushing a branch, or opening a pull request never
-deploys. Deployments are serialized, so two tags cannot apply the same
+Tags pushed with Git trigger the workflow from the tagged commit. Releases
+published in the GitHub browser trigger the workflow from the default branch.
+In both cases the workflow checks out and deploys the commit referenced by the
+`v*` tag, so browser releases can deploy a commit from any branch even when
+that commit does not contain the workflow file. Creating an ordinary branch,
+pushing a branch, saving a draft release, or opening a pull request never
+deploys. Deployments are serialized, so two deployments cannot apply the same
 Terraform state concurrently.
 
 ### Watch a deployment
