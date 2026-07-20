@@ -136,14 +136,18 @@ The tag triggers this sequence:
 6. retries against the public `/api/v1/health` endpoint;
 7. a deployment summary in the GitHub Actions run.
 
-Tags pushed with Git trigger the workflow from the tagged commit. Releases
-published in the GitHub browser trigger the workflow from the default branch.
-In both cases the workflow checks out and deploys the commit referenced by the
-`v*` tag, so browser releases can deploy a commit from any branch even when
-that commit does not contain the workflow file. Creating an ordinary branch,
-pushing a branch, saving a draft release, or opening a pull request never
-deploys. Deployments are serialized, so two deployments cannot apply the same
-Terraform state concurrently.
+The workflow runs for a pushed `v*` tag and checks out the commit referenced by
+that tag. The target can be on any branch, but that commit must contain
+`.github/workflows/backend-deploy.yml`. Merge or rebase the deployment setup
+into the target branch before creating its first deployment tag.
+
+You can also create a release in the GitHub browser. Choose the target branch
+or commit and create a new `v*` tag while publishing the release. GitHub's tag
+push starts the same workflow once; the release event itself does not start a
+second deployment. Creating an ordinary branch, pushing a branch, saving a
+draft release, or opening a pull request never deploys. Deployments are
+serialized, so two deployments cannot apply the same Terraform state
+concurrently.
 
 ### Watch a deployment
 

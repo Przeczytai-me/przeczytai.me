@@ -93,6 +93,7 @@ data "aws_iam_policy_document" "deploy" {
     actions = [
       "ecr:BatchCheckLayerAvailability",
       "ecr:BatchDeleteImage",
+      "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:CreateRepository",
       "ecr:DeleteRepository",
@@ -126,6 +127,7 @@ data "aws_iam_policy_document" "deploy" {
       "lambda:GetFunctionEventInvokeConfig",
       "lambda:GetPolicy",
       "lambda:ListTags",
+      "lambda:ListVersionsByFunction",
       "lambda:PutFunctionEventInvokeConfig",
       "lambda:RemovePermission",
       "lambda:TagResource",
@@ -234,6 +236,7 @@ data "aws_iam_policy_document" "deploy" {
     sid    = "ProjectBudget"
     effect = "Allow"
     actions = [
+      "budgets:ListTagsForResource",
       "budgets:ModifyBudget",
       "budgets:TagResource",
       "budgets:UntagResource",
