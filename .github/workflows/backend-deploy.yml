@@ -1,7 +1,12 @@
 name: Deploy backend to dev
 
 on:
-  create:
+  push:
+    tags:
+      - "v*"
+  release:
+    types:
+      - published
 
 permissions:
   contents: read
@@ -22,7 +27,7 @@ env:
 jobs:
   test:
     name: Deployment gate
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    if: startsWith(github.ref_name, 'v')
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
 
@@ -30,7 +35,7 @@ jobs:
       - name: Check out tagged commit
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -54,7 +59,7 @@ jobs:
   deploy:
     name: Build and deploy
     needs: test
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    if: startsWith(github.ref_name, 'v')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     permissions:
@@ -65,7 +70,7 @@ jobs:
       - name: Check out tagged commit
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Configure short-lived AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
