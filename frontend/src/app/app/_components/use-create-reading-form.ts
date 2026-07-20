@@ -1,10 +1,13 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useReducer } from "react";
+import { useEffect, useReducer } from "react";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 import { dictionary } from "@/i18n/dictionaries";
 import { createReading } from "@/lib/api";
 import { isSupportedDocumentFile } from "@/lib/file-constants";
+import { localStorageKeys } from "@/lib/local-storage-keys";
+import { defaultAppSettings, parseAppSettings } from "@/lib/settings-defaults";
 import type { CreateReadingFormState } from "./create-reading-form";
 
 const copy = dictionary.app.newDocument;
@@ -20,6 +23,7 @@ const initialState: CreateReadingFormState = {
 type CreateReadingAction =
   | { type: "fileRejected"; error: string }
   | { type: "fileSelected"; fileName: string; text: string }
+  | { type: "hydrateDefaults"; vendor: string; voice: string }
   | { type: "reset" }
   | { type: "setText"; text: string }
   | { type: "setVendor"; vendor: string }
@@ -43,6 +47,12 @@ const createReadingReducer = (
         selectedFileName: action.fileName,
         text: action.text,
       };
+    case "hydrateDefaults":
+      return {
+        ...state,
+        vendor: state.vendor || action.vendor,
+        voice: state.voice || action.voice,
+      };
     case "reset":
       return initialState;
     case "setText":
@@ -57,6 +67,23 @@ const createReadingReducer = (
 export const useCreateReadingForm = () => {
   const queryClient = useQueryClient();
   const [state, dispatch] = useReducer(createReadingReducer, initialState);
+  const [settings, , hasHydratedSettings] = useLocalStorage(
+    localStorageKeys.settings,
+    {
+      defaultValue: defaultAppSettings,
+      parse: parseAppSettings,
+    },
+  );
+
+  useEffect(() => {
+    if (hasHydratedSettings) {
+      dispatch({
+        type: "hydrateDefaults",
+        vendor: settings.defaultModel,
+        voice: settings.defaultVoice,
+      });
+    }
+  }, [hasHydratedSettings, settings.defaultModel, settings.defaultVoice]);
 
   const mutation = useMutation({
     mutationFn: () =>

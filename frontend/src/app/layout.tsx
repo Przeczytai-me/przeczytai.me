@@ -1,4 +1,5 @@
 import { ClerkProvider } from "@clerk/nextjs";
+import { RootProvider } from "fumadocs-ui/provider/next";
 import type { Metadata } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
 import { Providers } from "@/components/providers";
@@ -39,7 +40,18 @@ const RootLayout = ({
         )}
       >
         <body className="flex min-h-full flex-col">
-          <Providers>{children}</Providers>
+          <Providers>
+            <RootProvider
+              search={{ enabled: false }}
+              theme={{ enabled: false }}
+              i18n={{
+                locale: defaultLocale,
+                translations: dictionary.docs.uiTranslations,
+              }}
+            >
+              {children}
+            </RootProvider>
+          </Providers>
         </body>
       </html>
     </ClerkProvider>

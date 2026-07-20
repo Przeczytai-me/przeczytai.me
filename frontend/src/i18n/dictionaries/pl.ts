@@ -12,13 +12,13 @@ export const pl = {
       openApp: "Przejdź do dokumentów",
       signUp: "Utwórz konto",
       signIn: "Zaloguj się",
-      viewDocs: "Zobacz dokumentację",
+      viewDocs: "Centrum pomocy",
     },
     demo: {
       label: "Przykład pracy aplikacji PrzeczytAI.me",
     },
     docsCallout: {
-      text: "Jakieś niejasności? Sprawdź naszą dokumentację.",
+      text: "Potrzebujesz pomocy? Zajrzyj do prostych przewodników po aplikacji.",
     },
     capabilities: {
       heading: "Co robi ta aplikacja?",
@@ -94,6 +94,19 @@ export const pl = {
     privateWorkspaceNote:
       "Dokumenty są przechowywane w prywatnej przestrzeni użytkownika.",
   },
+  docs: {
+    backToHome: "Strona główna",
+    uiTranslations: {
+      "Close Sidebar(sidebar)(aria-label)": "Zamknij panel boczny",
+      "Collapse Sidebar(sidebar)(aria-label)": "Zwiń panel boczny",
+      "Copy Anchor Link(heading anchor)(aria-label)":
+        "Kopiuj odnośnik do sekcji",
+      "Next Page(pagination)": "Następna strona",
+      "On this page(table of contents)": "Na tej stronie",
+      "Open Sidebar(sidebar)(aria-label)": "Otwórz panel boczny",
+      "Previous Page(pagination)": "Poprzednia strona",
+    },
+  },
   app: {
     notImplementedYet: "not implemented yet",
     shell: {
@@ -101,11 +114,12 @@ export const pl = {
       processingStatus: "Brak aktywnego przetwarzania",
       documentTitlePrefix: "Dokument",
       navigation: {
+        account: "Konto",
         documents: "Dokumenty",
         newDocument: "Nowy dokument",
         jobs: "Zadania",
         settings: "Ustawienia",
-        documentation: "Dokumentacja",
+        documentation: "Centrum pomocy",
       },
       sidebar: {
         collapseLabel: "Zwiń panel boczny",
@@ -165,6 +179,125 @@ export const pl = {
       create: "czytAI",
       creating: "Tworzenie",
       created: "Utworzono",
+    },
+    account: {
+      heading: "Konto",
+      description:
+        "Zarządzaj profilem, metodami logowania, aktywną sesją i danymi konta.",
+      email: {
+        title: "Adres e-mail",
+        description: "Adres używany do logowania i kontaktu z aplikacją.",
+        label: "Podstawowy adres e-mail",
+        loading: "Ładowanie adresu e-mail...",
+        unavailable: "Brak podstawowego adresu e-mail",
+        manageAccount: "Zarządzaj profilem i metodami logowania",
+      },
+      session: {
+        title: "Sesja",
+        description:
+          "Wylogowanie zakończy bieżącą sesję i przeniesie Cię na stronę główną.",
+        signOut: "Wyloguj się",
+      },
+      data: {
+        title: "Prywatność i usunięcie danych",
+        description:
+          "Sprawdź politykę prywatności albo wyślij prośbę o usunięcie konta i powiązanych danych.",
+        privacyPolicy: "Polityka prywatności",
+        deletionRequest: "Poproś o usunięcie konta i danych",
+        deletionRequestSubject: "Prośba o usunięcie konta i danych",
+        deletionRequestNote:
+          "Bezpośrednie usuwanie wszystkich danych nie jest jeszcze obsługiwane przez backend. Prośba zostanie wysłana do zespołu PrzeczytAI.me.",
+      },
+    },
+    settings: {
+      heading: "Ustawienia",
+      description:
+        "Ustaw domyślne wartości używane przy kolejnych dokumentach.",
+      temporaryDescription:
+        "Aktualnie zapis działa lokalnie w tej przeglądarce, dopóki backend nie udostępni profilu ustawień.",
+      futureOnlyNotice:
+        "Zmiany dotyczą tylko przyszłych dokumentów. Istniejące nagrania i przetworzone teksty nie zostaną zmienione.",
+      resetConfirm:
+        "Przywrócić domyślne ustawienia? Niezapisane zmiany w formularzu zostaną zastąpione.",
+      privacyRetentionTitle: "Retencja nieaktywnych kont",
+      privacyRetentionDescription:
+        "Dokumenty na nieaktywnych kontach mogą być usuwane po 365 dniach bez aktywności.",
+      abbreviationsEmpty: "Nie dodano jeszcze domyślnych odczytów skrótów.",
+      actions: {
+        addAbbreviation: "Dodaj wiersz",
+        deleteAllDocuments: "Usuń wszystkie dokumenty",
+        discard: "Odrzuć",
+        previewVoice: "Odsłuchaj głos",
+        removeAbbreviation: "Usuń wiersz",
+        reset: "Przywróć domyślne",
+        save: "Zapisz ustawienia",
+      },
+      fields: {
+        abbreviation: "Skrót",
+        actions: "Akcje",
+        defaultModel: "Domyślny model TTS",
+        defaultVoice: "Domyślny polski głos",
+        expansion: "Odczyt",
+        fallbackModel: "Model zapasowy",
+        highlightBehavior: "Podświetlanie zdań",
+        playbackSpeed: "Domyślna prędkość",
+        pronunciationStyle: "Styl wymowy",
+        textFormat: "Format tekstu",
+      },
+      placeholders: {
+        abbreviation: "np. prof.",
+        expansion: "np. profesor",
+      },
+      sections: {
+        abbreviations: {
+          title: "Odczyty skrótów",
+          description:
+            "Zapisz domyślne wymowy skrótów, które chcesz stosować w nowych dokumentach.",
+        },
+        exports: {
+          title: "Eksporty",
+          description: "Ustaw domyślny format tekstu dla przyszłych eksportów.",
+        },
+        model: {
+          title: "Model czytania",
+          description:
+            "Wybierz model główny i zapasowy dla nowych zadań przetwarzania.",
+        },
+        playback: {
+          title: "Odtwarzanie",
+          description:
+            "Dostosuj prędkość startową i zachowanie podświetlania zdań.",
+        },
+        privacy: {
+          title: "Prywatność",
+          description:
+            "Sprawdź zasady retencji i akcje dotyczące przechowywanych dokumentów.",
+          linkLabel: "Polityka prywatności",
+        },
+        voice: {
+          title: "Głos",
+          description:
+            "Ustaw domyślny polski głos i sposób wymowy dla nowych nagrań.",
+        },
+      },
+      status: {
+        discarded: "Zmiany odrzucone.",
+        editing: "Masz niezapisane zmiany.",
+        ready: "Ustawienia gotowe.",
+        reset: "Domyślne ustawienia przywrócone i zapisane.",
+        saved: "Ustawienia zapisane.",
+      },
+      unsupported: {
+        abbreviations:
+          "Te reguły zapisują się w localStorage przeglądarki po użyciu paska zapisu. Backend nie obsługuje jeszcze globalnych odczytów skrótów.",
+        deleteAllDocuments:
+          "Akcja będzie dostępna po dodaniu bezpiecznego endpointu usuwania wszystkich dokumentów.",
+        voicePreview:
+          "Podgląd głosu wymaga endpointu generowania krótkiej próbki audio.",
+      },
+      unsavedBar: {
+        message: "Masz niezapisane zmiany w ustawieniach.",
+      },
     },
   },
 } as const;

@@ -27,7 +27,7 @@ export const AppSidebar = ({
     <aside
       className={cn(
         "fixed inset-y-0 left-0 z-20 flex flex-col border-border border-r bg-background transition-[width]",
-        isCollapsed ? "w-16" : "w-64",
+        isCollapsed ? "w-16" : "w-52",
       )}
       onTransitionEnd={(event) => {
         if (event.propertyName === "width") {
