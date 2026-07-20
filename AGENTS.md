@@ -26,5 +26,12 @@ documentation.
 ## Git Workflow
 
 - Use Conventional Commits structure for commit messages.
+- Pull request titles must follow
+  `<type>(<LINEAR_TICKET_OR_SERVICE>): <description>`. Use the Linear ticket
+  number when one exists and the service name otherwise. Examples:
+  - `feat(PRZ-44): add authenticated application shell`
+  - `fix(PRZ-56): enable API mocking in development`
+  - `chore(frontend): update dependencies`
+  - `ci(infrastructure): add deployment validation`
 - Pull requests may be based from a `codex/...` branch, but the PR title should
   not include `codex`.
