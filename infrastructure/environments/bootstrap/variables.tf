@@ -22,3 +22,15 @@ variable "terraform_principal_arns" {
   type    = list(string)
   default = []
 }
+
+variable "github_repository" {
+  type        = string
+  default     = "Przeczytai-me/przeczytai.me"
+  description = "Repository allowed to assume the deploy role from v* tag workflows."
+}
+
+variable "create_github_oidc_provider" {
+  type        = bool
+  default     = true
+  description = "Set false when this AWS account already has the GitHub Actions OIDC provider."
+}
