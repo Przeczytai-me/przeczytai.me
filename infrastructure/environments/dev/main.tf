@@ -8,9 +8,11 @@ locals {
 
   processor_environment_variables = merge(
     {
-      ENVIRONMENT         = var.environment
-      FILES_BUCKET_NAME   = module.storage.files_bucket_name
-      READINGS_TABLE_NAME = module.storage.metadata_table_name
+      ENVIRONMENT              = var.environment
+      FILES_BUCKET_NAME        = module.storage.files_bucket_name
+      READINGS_TABLE_NAME      = module.storage.metadata_table_name
+      MAX_CHUNK_CHARS          = tostring(var.max_chunk_chars)
+      AI_NORMALIZATION_ENABLED = tostring(var.ai_normalization_enabled)
     },
     local.openai_tts_enabled ? { OPENAI_API_KEY_SECRET_ARN = var.openai_api_key_secret_arn } : {}
   )
