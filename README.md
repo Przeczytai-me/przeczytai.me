@@ -13,6 +13,13 @@ Text-to-speech web app for the Polish language. Paste or type any Polish text an
 └── tests/          # Repository-level integration tests
 ```
 
+## Documentation
+
+- [Deploying the stack](infrastructure/README.md) — Terraform, ECR processor image, Clerk authorizer.
+- [Backend configuration](docs/backend-configuration.md) — settings and tunables (chunk size, AI seam, TTS).
+- [Creating a reading](docs/creating-a-reading.md) — submit text → poll status → download the recording.
+- [Reading statuses](docs/reading-statuses.md) — the processing state machine and UI labels.
+
 ## Running locally
 
 **Prerequisites:** Node.js 18+, pnpm

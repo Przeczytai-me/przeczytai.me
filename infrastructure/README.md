@@ -230,3 +230,10 @@ backend/.venv/bin/python -m pytest backend/tests -q
 
 `terraform validate` does not change AWS resources. `terraform init` may create
 an S3 lock object briefly while accessing remote state.
+
+## Application configuration
+
+Backend settings passed to the Lambdas as environment variables — including the
+article-processing tunables `max_chunk_chars` and `ai_normalization_enabled` — are
+documented in [`docs/backend-configuration.md`](../docs/backend-configuration.md).
+Changing those two only requires a `terraform apply` (no processor image rebuild).
