@@ -59,6 +59,11 @@ explaining where and why (`failed_to_start` means the processor could not be
 invoked at all). See `docs/reading-statuses.md` for the full table. Poll until the
 status is terminal (`completed`, `failed`, or `failed_to_start`).
 
+For a completed reading, `metadata.normalization` identifies the normalization
+rule-set version used to produce the corrected text. The current value,
+`regex-v1`, means the first version of the deterministic regex-based rules in
+`backend/app/normalization.py`.
+
 ## 3. Download the outputs
 
 Once `completed`:
