@@ -6,11 +6,11 @@ def build_timing_map(chunks: list[Chunk], durations: list[float]) -> dict:
         raise ValueError("chunks and durations must have the same length")
 
     segments: list[dict] = []
-    chunk_start = 0.0
+    chunk_start_ms = 0
     paragraph_index = 0
     segment_index = 1
 
-    for chunk, duration in zip(chunks, durations, strict=True):
+    for chunk, duration_seconds in zip(chunks, durations, strict=True):
         sentences: list[tuple[str, int]] = []
         for paragraph in split_paragraphs(chunk.text):
             sentences.extend(
@@ -18,26 +18,27 @@ def build_timing_map(chunks: list[Chunk], durations: list[float]) -> dict:
             )
             paragraph_index += 1
 
-        chunk_end = chunk_start + duration
+        duration_ms = round(duration_seconds * 1000)
+        chunk_end_ms = chunk_start_ms + duration_ms
         total_characters = sum(len(sentence) for sentence, _ in sentences)
-        sentence_start = chunk_start
+        sentence_start_ms = chunk_start_ms
         for index, (sentence, paragraph) in enumerate(sentences):
-            sentence_end = (
-                chunk_end
+            sentence_end_ms = (
+                chunk_end_ms
                 if index == len(sentences) - 1
-                else sentence_start + duration * len(sentence) / total_characters
+                else sentence_start_ms + round(duration_ms * len(sentence) / total_characters)
             )
             segments.append(
                 {
-                    "id": f"s{segment_index:04d}",
+                    "id": f"segment-{segment_index}",
                     "text": sentence,
-                    "start": round(sentence_start, 3),
-                    "end": round(sentence_end, 3),
-                    "paragraph": paragraph,
+                    "paragraph_index": paragraph,
+                    "start_ms": sentence_start_ms,
+                    "end_ms": sentence_end_ms,
                 }
             )
             segment_index += 1
-            sentence_start = sentence_end
-        chunk_start = chunk_end
+            sentence_start_ms = sentence_end_ms
+        chunk_start_ms = chunk_end_ms
 
-    return {"version": 1, "duration": round(chunk_start, 3), "segments": segments}
+    return {"version": 1, "duration_ms": chunk_start_ms, "segments": segments}

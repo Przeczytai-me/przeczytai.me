@@ -131,21 +131,21 @@ def test_timing_map_returns_persisted_segments_with_exact_public_shape() -> None
     add_reading(repo, "user-1", timing_map_key=key)
     timing = {
         "version": 1,
-        "duration": 3.75,
+        "duration_ms": 3750,
         "segments": [
             {
-                "id": "s0001",
+                "id": "segment-1",
                 "text": "Ala ma kota.",
-                "start": 0.0,
-                "end": 1.25,
-                "paragraph": 0,
+                "paragraph_index": 0,
+                "start_ms": 0,
+                "end_ms": 1250,
             },
             {
-                "id": "s0002",
+                "id": "segment-2",
                 "text": "Ola ma psa.",
-                "start": 1.25,
-                "end": 3.75,
-                "paragraph": 1,
+                "paragraph_index": 1,
+                "start_ms": 1250,
+                "end_ms": 3750,
             },
         ],
     }
@@ -156,7 +156,7 @@ def test_timing_map_returns_persisted_segments_with_exact_public_shape() -> None
     assert response.status_code == 200
     assert response.json() == {
         "reading_id": "reading-1",
-        "duration": 3.75,
+        "duration_ms": 3750,
         "segments": timing["segments"],
     }
     assert storage.get_calls == [key]

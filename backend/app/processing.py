@@ -67,15 +67,15 @@ async def process_reading(
         repo.set_status(owner_user_id, reading_id, current_stage)
         if job_id:
             repo.set_job_status(owner_user_id, str(job_id), current_stage)
+        corrected = apply_abbreviation_readings(original_text, pairs)
         try:
-            corrected = normalize(original_text)
+            corrected = normalize(corrected)
             normalization_status = "regex-v1"
         except Exception:
             logger.exception(
                 "text normalization failed",
                 extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
             )
-            corrected = original_text
             normalization_status = "failed"
 
         if settings.ai_normalization_enabled and normalization_status != "failed":
@@ -87,7 +87,6 @@ async def process_reading(
                     extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
                 )
 
-        corrected = apply_abbreviation_readings(corrected, pairs)
         corrected_text_key = storage.corrected_text_key(
             owner_user_id, reading_id, job_id=job_id
         )

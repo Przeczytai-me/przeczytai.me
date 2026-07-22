@@ -91,7 +91,6 @@ class JobsFakeRepo(FakeRepo):
         job_id: str,
         abbreviation_readings: list[dict[str, str]] | None = None,
     ) -> None:
-        del abbreviation_readings
         if self.fail_start:
             raise ProcessingStartError
         self.started.append(
@@ -102,6 +101,7 @@ class JobsFakeRepo(FakeRepo):
                 "vendor": vendor,
                 "voice": voice,
                 "job_id": job_id,
+                "abbreviation_readings": abbreviation_readings,
             }
         )
 
@@ -318,7 +318,7 @@ def test_repository_start_processing_includes_job_id_in_lambda_payload() -> None
 
 
 def test_list_jobs_returns_contract_shape() -> None:
-    """Return the stable aggregate job representation."""
+    """Return the frontend ProcessingJob representation without legacy fields."""
     repo = JobsFakeRepo()
     add_job(repo, "user_1", "job-1", status="generating_audio")
     test_client, _ = client(repo)
@@ -333,11 +333,9 @@ def test_list_jobs_returns_contract_shape() -> None:
                 "reading_id": "reading-1",
                 "attempt": 1,
                 "status": "generating_audio",
-                "state": "active",
-                "step_message": "Generowanie audio",
                 "progress": None,
+                "current_step": "Generowanie audio",
                 "error": None,
-                "failed_step": None,
                 "created_at": NOW,
                 "updated_at": NOW,
             }
@@ -347,32 +345,32 @@ def test_list_jobs_returns_contract_shape() -> None:
 
 
 @pytest.mark.parametrize(
-    ("status", "state", "step_message"),
+    ("internal_status", "public_status", "current_step"),
     [
-        ("uploaded", "active", "Przesłano"),
-        ("normalizing", "active", "Przetwarzanie tekstu"),
-        ("generating_audio", "active", "Generowanie audio"),
-        ("merging_audio", "active", "Scalanie nagrania"),
+        ("uploaded", "uploaded", "Przesłano"),
+        ("normalizing", "extracting_text", "Przetwarzanie tekstu"),
+        ("processing", "extracting_text", "processing"),
+        ("generating_audio", "generating_audio", "Generowanie audio"),
+        ("merging_audio", "generating_audio", "Scalanie nagrania"),
         ("completed", "ready", "Gotowe"),
         ("failed", "failed", "Błąd przetwarzania"),
         ("failed_to_start", "failed", "Błąd uruchomienia"),
-        ("legacy_status", "active", "legacy_status"),
     ],
 )
-def test_list_jobs_derives_state_and_polish_step_message(
-    status: str, state: str, step_message: str
+def test_list_jobs_maps_internal_status_and_polish_current_step(
+    internal_status: str, public_status: str, current_step: str
 ) -> None:
-    """Derive overview state and Polish labels from persisted status."""
+    """Map persisted pipeline state to the frontend status and Polish step label."""
     repo = JobsFakeRepo()
-    error = "Audio generation failed" if status == "failed" else None
-    failed_step = "generating_audio" if status == "failed" else None
+    stored_error = "Text normalization failed" if internal_status == "failed" else None
+    failed_step = "normalizing" if internal_status == "failed" else None
     add_job(
         repo,
         "user_1",
         "job-1",
         reading_id="reading-ready",
-        status=status,
-        error=error,
+        status=internal_status,
+        error=stored_error,
         failed_step=failed_step,
     )
     test_client, _ = client(repo)
@@ -382,12 +380,71 @@ def test_list_jobs_derives_state_and_polish_step_message(
     assert response.status_code == 200
     item = response.json()["items"][0]
     assert item["reading_id"] == "reading-ready"
-    assert item["status"] == status
-    assert item["state"] == state
-    assert item["step_message"] == step_message
+    assert item["status"] == public_status
+    assert item["current_step"] == current_step
     assert item["progress"] is None
-    assert item["error"] == error
-    assert item["failed_step"] == failed_step
+    if internal_status == "failed":
+        assert item["error"] == {
+            "code": "processing_failed",
+            "message": "Text normalization failed",
+            "step": "normalizing",
+        }
+    elif internal_status == "failed_to_start":
+        assert item["error"] == {
+            "code": "processing_start_failed",
+            "message": "Failed to start reading processing",
+            "step": "start_processing",
+        }
+    else:
+        assert item["error"] is None
+    assert repo.jobs[("user_1", "job-1")]["status"] == internal_status
+    assert "state" not in item
+    assert "step_message" not in item
+    assert "failed_step" not in item
+
+
+def test_list_jobs_serializes_processing_failure_error() -> None:
+    """Nest the stored safe processing error and failed stage for frontend use."""
+    repo = JobsFakeRepo()
+    add_job(
+        repo,
+        "user_1",
+        "job-1",
+        status="failed",
+        error="Audio generation failed",
+        failed_step="generating_audio",
+    )
+    test_client, _ = client(repo)
+
+    item = test_client.get("/api/v1/jobs").json()["items"][0]
+
+    assert item["error"] == {
+        "code": "processing_failed",
+        "message": "Audio generation failed",
+        "step": "generating_audio",
+    }
+
+
+def test_list_jobs_serializes_processing_start_failure_error() -> None:
+    """Expose a fixed safe startup error with the pinned startup step."""
+    repo = JobsFakeRepo()
+    add_job(
+        repo,
+        "user_1",
+        "job-1",
+        status="failed_to_start",
+        error="provider detail that must not leak",
+        failed_step="some-other-step",
+    )
+    test_client, _ = client(repo)
+
+    item = test_client.get("/api/v1/jobs").json()["items"][0]
+
+    assert item["error"] == {
+        "code": "processing_start_failed",
+        "message": "Failed to start reading processing",
+        "step": "start_processing",
+    }
 
 
 def test_list_jobs_is_user_scoped() -> None:
@@ -425,6 +482,28 @@ def test_list_jobs_paginates_and_passes_cursor_through() -> None:
     assert [item["id"] for item in second.json()["items"]] == ["job-001"]
     assert second.json()["next_cursor"] is None
     assert repo.list_job_calls == [("user_1", 2, None), ("user_1", 2, "1")]
+
+
+def test_deleted_reading_job_remains_listed() -> None:
+    """Keep immutable processing history after its reading is deleted."""
+    repo = JobsFakeRepo()
+    reading = repo.create(
+        "user_1",
+        "reading-1",
+        "users/user_1/readings/reading-1/original.txt",
+        5,
+        "edge-tts",
+        "pl-PL-ZofiaNeural",
+    )
+    add_job(repo, "user_1", "job-1", reading_id=str(reading["reading_id"]))
+    test_client, _ = client(repo)
+
+    deleted = test_client.delete("/api/v1/readings/reading-1")
+    response = test_client.get("/api/v1/jobs")
+
+    assert deleted.status_code == 204
+    assert repo.get("user_1", "reading-1") is None
+    assert [item["id"] for item in response.json()["items"]] == ["job-1"]
 
 
 @pytest.mark.parametrize("limit", [0, 51])
@@ -520,12 +599,19 @@ def test_create_reading_marks_job_failed_when_processing_start_fails() -> None:
     assert reading["status"] == "failed_to_start"
     assert job["status"] == "failed_to_start"
     assert job["error"] == "Failed to start reading processing"
+    assert job["failed_step"] == "start_processing"
     assert repo.job_status_calls == [
         {
             "owner_user_id": "user_1",
             "job_id": job["job_id"],
             "status": "failed_to_start",
             "error": "Failed to start reading processing",
-            "failed_step": None,
+            "failed_step": "start_processing",
         }
     ]
+    listed_job = test_client.get("/api/v1/jobs").json()["items"][0]
+    assert listed_job["error"] == {
+        "code": "processing_start_failed",
+        "message": "Failed to start reading processing",
+        "step": "start_processing",
+    }

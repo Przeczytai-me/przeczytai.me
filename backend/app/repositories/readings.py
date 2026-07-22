@@ -65,14 +65,34 @@ class ReadingRepository:
         self.table.put_item(Item=item)
         return item
 
-    def increment_attempts(self, owner_user_id: str, reading_id: str) -> int:
-        response = self.table.update_item(
-            Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"},
-            UpdateExpression="SET attempts = if_not_exists(attempts, :one) + :one",
-            ConditionExpression="attribute_exists(reading_id)",
-            ExpressionAttributeValues={":one": 1},
-            ReturnValues="UPDATED_NEW",
-        )
+    def begin_retry(self, owner_user_id: str, reading_id: str) -> int:
+        try:
+            response = self.table.update_item(
+                Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"},
+                UpdateExpression=(
+                    "SET #status = :uploaded, "
+                    "attempts = if_not_exists(attempts, :one) + :one, "
+                    "updated_at = :updated_at"
+                ),
+                ConditionExpression=(
+                    "attribute_exists(reading_id) AND "
+                    "#status IN (:completed, :failed, :failed_to_start)"
+                ),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":uploaded": ReadingStatus.UPLOADED.value,
+                    ":one": 1,
+                    ":updated_at": _now(),
+                    ":completed": ReadingStatus.COMPLETED.value,
+                    ":failed": ReadingStatus.FAILED.value,
+                    ":failed_to_start": ReadingStatus.FAILED_TO_START.value,
+                },
+                ReturnValues="UPDATED_NEW",
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                raise RetryConflictError from exc
+            raise
         return int(response["Attributes"]["attempts"])
 
     def next_id(self) -> str:
@@ -306,4 +326,8 @@ class ReadingRepository:
 
 
 class ProcessingStartError(Exception):
+    pass
+
+
+class RetryConflictError(Exception):
     pass

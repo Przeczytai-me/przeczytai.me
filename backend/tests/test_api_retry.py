@@ -1,16 +1,25 @@
 import pytest
+from botocore.exceptions import ClientError
 
 from app.models import ReadingStatus
+from app.repositories import readings as readings_repository
 from app.repositories.readings import ProcessingStartError
 from test_api import NOW, FakeRepo, add_reading, client
 from test_api_jobs import RepositoryFakeTable, repository
 
+RetryConflictError = getattr(
+    readings_repository,
+    "RetryConflictError",
+    type("RetryConflictError", (Exception,), {}),
+)
+
 
 class RetryFakeRepo(FakeRepo):
-    def __init__(self, fail_start: bool = False) -> None:
+    def __init__(self, fail_start: bool = False, retry_conflict: bool = False) -> None:
         super().__init__()
         self.fail_start = fail_start
-        self.increment_calls: list[tuple[str, str]] = []
+        self.retry_conflict = retry_conflict
+        self.begin_retry_calls: list[tuple[str, str]] = []
         self.status_calls: list[tuple[str, str, str]] = []
         self.job_status_calls: list[dict[str, object]] = []
 
@@ -24,7 +33,6 @@ class RetryFakeRepo(FakeRepo):
         voice: str | None,
         abbreviation_readings: list[dict[str, str]] | None = None,
     ) -> dict:
-        del abbreviation_readings
         item = super().create(
             owner_user_id,
             reading_id,
@@ -32,15 +40,24 @@ class RetryFakeRepo(FakeRepo):
             char_count,
             vendor,
             voice,
+            abbreviation_readings,
         )
         item["attempts"] = 1
         return item
 
-    def increment_attempts(self, owner_user_id: str, reading_id: str) -> int:
-        self.increment_calls.append((owner_user_id, reading_id))
+    def begin_retry(self, owner_user_id: str, reading_id: str) -> int:
+        self.begin_retry_calls.append((owner_user_id, reading_id))
         item = self.items[(owner_user_id, reading_id)]
+        if self.retry_conflict or item["status"] not in {
+            "completed",
+            "failed",
+            "failed_to_start",
+        }:
+            raise RetryConflictError
         attempts = int(item.get("attempts", 1)) + 1
         item["attempts"] = attempts
+        item["status"] = "uploaded"
+        item["updated_at"] = NOW
         return attempts
 
     def create_job(self, owner_user_id: str, reading_id: str, attempt: int) -> dict:
@@ -102,7 +119,6 @@ class RetryFakeRepo(FakeRepo):
         job_id: str,
         abbreviation_readings: list[dict[str, str]] | None = None,
     ) -> None:
-        del abbreviation_readings
         if self.fail_start:
             raise ProcessingStartError
         super().start_processing(
@@ -112,13 +128,28 @@ class RetryFakeRepo(FakeRepo):
             vendor,
             voice,
             job_id,
+            abbreviation_readings,
         )
 
 
-class IncrementTable(RepositoryFakeTable):
+class BeginRetryTable(RepositoryFakeTable):
     def update_item(self, **kwargs: object) -> dict[str, dict[str, int]]:
         self.update_calls.append(kwargs)
         return {"Attributes": {"attempts": 2}}
+
+
+class ConflictingBeginRetryTable(RepositoryFakeTable):
+    def update_item(self, **kwargs: object) -> None:
+        self.update_calls.append(kwargs)
+        raise ClientError(
+            {
+                "Error": {
+                    "Code": "ConditionalCheckFailedException",
+                    "Message": "condition failed",
+                }
+            },
+            "UpdateItem",
+        )
 
 
 def terminal_reading(
@@ -158,32 +189,59 @@ def test_repository_create_stores_first_attempt(monkeypatch: pytest.MonkeyPatch)
     assert table.put_calls == [{"Item": item}]
 
 
-def test_repository_increment_attempts_is_atomic_and_legacy_safe() -> None:
-    """Atomically return attempt two when a legacy reading has no counter."""
-    table = IncrementTable()
+def test_repository_begin_retry_is_atomic_terminal_only_and_legacy_safe() -> None:
+    """Claim a terminal reading and increment its attempt in one conditional update."""
+    table = BeginRetryTable()
     repo = repository(table)
 
-    attempt = repo.increment_attempts("user-1", "reading-1")
+    attempt = repo.begin_retry("user-1", "reading-1")
 
     assert attempt == 2
-    assert table.update_calls == [
-        {
-            "Key": {"pk": "USER#user-1", "sk": "READING#reading-1"},
-            "UpdateExpression": "SET attempts = if_not_exists(attempts, :one) + :one",
-            "ConditionExpression": "attribute_exists(reading_id)",
-            "ExpressionAttributeValues": {":one": 1},
-            "ReturnValues": "UPDATED_NEW",
-        }
-    ]
+    assert len(table.update_calls) == 1
+    request = table.update_calls[0]
+    assert request["Key"] == {"pk": "USER#user-1", "sk": "READING#reading-1"}
+    update = str(request["UpdateExpression"])
+    assert "attempts = if_not_exists(attempts," in update
+    condition = str(request["ConditionExpression"])
+    values = request["ExpressionAttributeValues"]
+    one_placeholder = next(key for key, value in values.items() if value == 1)
+    assert update.count(one_placeholder) == 2
+    uploaded_placeholder = next(key for key, value in values.items() if value == "uploaded")
+    assert uploaded_placeholder in update
+    for terminal_status in ("completed", "failed", "failed_to_start"):
+        placeholder = next(key for key, value in values.items() if value == terminal_status)
+        assert placeholder in condition
+    status_name = next(
+        name for name, value in request["ExpressionAttributeNames"].items() if value == "status"
+    )
+    assert status_name in update
+    assert status_name in condition
+    assert request["ReturnValues"] == "UPDATED_NEW"
+
+
+def test_repository_begin_retry_translates_conditional_failure_to_conflict() -> None:
+    """Translate a lost terminal-state race into the repository conflict signal."""
+    repo = repository(ConflictingBeginRetryTable())
+
+    with pytest.raises(RetryConflictError):
+        repo.begin_retry("user-1", "reading-1")
 
 
 def test_retry_completed_reading_returns_new_job_and_reuses_stored_inputs() -> None:
-    """Retry a completed reading as attempt two without replacing its outputs."""
+    """Retry with a frontend job response and all inputs persisted on the reading."""
     repo = RetryFakeRepo()
     test_client, _ = client(repo)
     created_response = test_client.post(
         "/api/v1/readings",
-        json={"original_text": "hello", "vendor": "edge-tts", "voice": "Marek"},
+        json={
+            "original_text": "hello",
+            "vendor": "edge-tts",
+            "voice": "Marek",
+            "abbreviation_readings": [
+                {"abbreviation": "Np.", "read_as": "en pe"},
+                {"abbreviation": "m.in.", "read_as": "między innymi"},
+            ],
+        },
     )
     assert created_response.status_code == 202
     reading_id = created_response.json()["id"]
@@ -202,16 +260,14 @@ def test_retry_completed_reading_returns_new_job_and_reuses_stored_inputs() -> N
         "reading_id": reading_id,
         "attempt": 2,
         "status": "uploaded",
-        "state": "active",
-        "step_message": "Przesłano",
         "progress": None,
+        "current_step": "Przesłano",
         "error": None,
-        "failed_step": None,
         "created_at": NOW,
         "updated_at": NOW,
     }
-    assert repo.increment_calls == [("user_1", reading_id)]
-    assert repo.status_calls == [("user_1", reading_id, "uploaded")]
+    assert repo.begin_retry_calls == [("user_1", reading_id)]
+    assert repo.status_calls == []
     assert repo.started[-1] == {
         "owner_user_id": "user_1",
         "reading_id": reading_id,
@@ -219,7 +275,10 @@ def test_retry_completed_reading_returns_new_job_and_reuses_stored_inputs() -> N
         "vendor": item["vendor"],
         "voice": item["voice"],
         "job_id": "job-2",
-        "abbreviation_readings": None,
+        "abbreviation_readings": [
+            {"abbreviation": "Np.", "read_as": "en pe"},
+            {"abbreviation": "m.in.", "read_as": "między innymi"},
+        ],
     }
     assert (item["corrected_text_key"], item["recording_key"]) == preserved_keys
 
@@ -251,7 +310,7 @@ def test_retry_missing_or_foreign_reading_returns_not_found(ownership: str) -> N
 
     assert response.status_code == 404
     assert response.json() == {"error": {"code": "not_found", "message": "Reading not found"}}
-    assert repo.increment_calls == []
+    assert repo.begin_retry_calls == []
     assert repo.jobs == {}
 
 
@@ -275,7 +334,7 @@ def test_retry_non_terminal_reading_returns_conflict(reading_status: str) -> Non
             "message": "A processing attempt is already active for this reading",
         }
     }
-    assert repo.increment_calls == []
+    assert repo.begin_retry_calls == [("user_1", item["reading_id"])]
     assert repo.jobs == {}
     assert repo.started == []
 
@@ -292,6 +351,26 @@ def test_retry_is_allowed_from_every_terminal_status(reading_status: str) -> Non
     assert response.status_code == 202
     assert response.json()["attempt"] == 2
     assert response.json()["reading_id"] == item["reading_id"]
+
+
+def test_retry_returns_conflict_when_atomic_claim_loses_a_race() -> None:
+    """Return conflict when another request claims the terminal reading first."""
+    repo = RetryFakeRepo(retry_conflict=True)
+    item = terminal_reading(repo)
+    test_client, _ = client(repo)
+
+    response = test_client.post(f"/api/v1/readings/{item['reading_id']}/retry")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": {
+            "code": "conflict",
+            "message": "A processing attempt is already active for this reading",
+        }
+    }
+    assert repo.begin_retry_calls == [("user_1", item["reading_id"])]
+    assert repo.jobs == {}
+    assert repo.started == []
 
 
 def test_immediate_second_retry_returns_conflict() -> None:
@@ -339,15 +418,22 @@ def test_retry_start_failure_marks_reading_and_job_without_replacing_outputs() -
     assert job["attempt"] == 2
     assert job["status"] == "failed_to_start"
     assert job["error"] == "Failed to start reading processing"
+    assert job["failed_step"] == "start_processing"
     assert repo.job_status_calls == [
         {
             "owner_user_id": "user_1",
             "job_id": job["job_id"],
             "status": "failed_to_start",
             "error": "Failed to start reading processing",
-            "failed_step": None,
+            "failed_step": "start_processing",
         }
     ]
+    listed_job = test_client.get("/api/v1/jobs").json()["items"][0]
+    assert listed_job["error"] == {
+        "code": "processing_start_failed",
+        "message": "Failed to start reading processing",
+        "step": "start_processing",
+    }
 
 
 def test_retry_requires_authentication() -> None:
