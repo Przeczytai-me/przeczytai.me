@@ -6,7 +6,13 @@ from fastapi.responses import RedirectResponse
 from app.auth import CurrentUser, get_current_user
 from app.config import Settings, get_settings
 from app.errors import ApiException
-from app.models import AbbreviationReading, Reading, ReadingCreateRequest, ReadingListResponse
+from app.models import (
+    AbbreviationReading,
+    Reading,
+    ReadingCreateRequest,
+    ReadingListResponse,
+    ReadingStatus,
+)
 from app.repositories.readings import ProcessingStartError, ReadingRepository
 from app.storage import FileStorage, StorageError, StorageObjectNotFoundError
 from app.tts import (
@@ -161,6 +167,7 @@ async def create_reading(
         selection.voice,
         abbreviation_readings=abbreviation_readings,
     )
+    job = repo.create_job(user.user_id, reading_id, attempt=1)
     try:
         repo.start_processing(
             user.user_id,
@@ -168,10 +175,17 @@ async def create_reading(
             original_text_key,
             selection.vendor,
             selection.voice,
+            job["job_id"],
             abbreviation_readings=abbreviation_readings,
         )
     except ProcessingStartError as exc:
         repo.mark_processing_start_failed(user.user_id, reading_id)
+        repo.set_job_status(
+            user.user_id,
+            job["job_id"],
+            ReadingStatus.FAILED_TO_START,
+            error="Failed to start reading processing",
+        )
         raise ApiException(
             "processing_start_failed",
             "Failed to start reading processing",

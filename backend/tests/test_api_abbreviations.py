@@ -36,6 +36,7 @@ class AbbreviationRepo(FakeRepo):
         original_text_key: str,
         vendor: str | None,
         voice: str | None,
+        job_id: str,
         abbreviation_readings: list[dict[str, str]] | None = None,
     ) -> None:
         self.started_abbreviation_readings.append(abbreviation_readings)
@@ -45,6 +46,7 @@ class AbbreviationRepo(FakeRepo):
             original_text_key,
             vendor,
             voice,
+            job_id,
         )
 
 

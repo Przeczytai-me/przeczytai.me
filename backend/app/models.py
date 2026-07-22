@@ -108,3 +108,21 @@ class UserSettingsUpdate(BaseModel):
 class UserSettingsResponse(BaseModel):
     settings: UserSettings
     defaults: UserSettings
+
+class Job(BaseModel):
+    id: str
+    reading_id: str
+    attempt: int
+    status: str
+    state: str
+    step_message: str
+    progress: int | None = None
+    error: str | None = None
+    failed_step: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class JobListResponse(BaseModel):
+    items: list[Job]
+    next_cursor: str | None = None

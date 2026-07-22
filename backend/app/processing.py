@@ -22,6 +22,12 @@ from app.tts import (
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 TERMINAL_READING_STATUSES = {"completed", "failed"}
+TERMINAL_JOB_STATUSES = {"completed", "failed", "failed_to_start"}
+JOB_FAILURE_MESSAGES = {
+    ReadingStatus.NORMALIZING: "Text normalization failed",
+    ReadingStatus.GENERATING_AUDIO: "Audio generation failed",
+    ReadingStatus.MERGING_AUDIO: "Audio merging failed",
+}
 
 
 async def process_reading(
@@ -36,21 +42,29 @@ async def process_reading(
     repo = repo or ReadingRepository(settings.readings_table_name, None)
 
     reading_id = str(event["reading_id"])
+    job_id = event.get("job_id")
     owner_user_id = str(event["owner_user_id"])
     original_text_key = str(event["original_text_key"])
     pairs = event.get("abbreviation_readings")
-    selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
     current_stage = ReadingStatus.NORMALIZING
 
-    existing = repo.get(owner_user_id, reading_id)
     try:
-        if existing and existing.get("status") in TERMINAL_READING_STATUSES:
-            return {"status": str(existing["status"])}
+        if job_id:
+            existing_job = repo.get_job(owner_user_id, str(job_id))
+            if existing_job and existing_job.get("status") in TERMINAL_JOB_STATUSES:
+                return {"status": str(existing_job["status"])}
+        else:
+            existing = repo.get(owner_user_id, reading_id)
+            if existing and existing.get("status") in TERMINAL_READING_STATUSES:
+                return {"status": str(existing["status"])}
 
+        selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
         ensure_tts_provider_available(selection, settings)
         original_text = storage.get_text(original_text_key)
         provider = validate_tts_input(original_text, selection)
         repo.set_status(owner_user_id, reading_id, current_stage)
+        if job_id:
+            repo.set_job_status(owner_user_id, str(job_id), current_stage)
         try:
             corrected = normalize(original_text)
             normalization_status = RULE_BASED_NORMALIZATION_VERSION
@@ -93,10 +107,14 @@ async def process_reading(
         ]
         current_stage = ReadingStatus.GENERATING_AUDIO
         repo.set_status(owner_user_id, reading_id, current_stage)
+        if job_id:
+            repo.set_job_status(owner_user_id, str(job_id), current_stage)
         for chunk, chunk_path in zip(chunks, chunk_paths, strict=True):
             await synthesize(chunk.text, str(chunk_path), selection, settings)
         current_stage = ReadingStatus.MERGING_AUDIO
         repo.set_status(owner_user_id, reading_id, current_stage)
+        if job_id:
+            repo.set_job_status(owner_user_id, str(job_id), current_stage)
         merge_mp3_files(chunk_paths, recording_path)
         storage.put_bytes(recording_key, recording_path.read_bytes(), provider.content_type)
 
@@ -113,6 +131,8 @@ async def process_reading(
             recording_key,
             metadata,
         )
+        if job_id:
+            repo.set_job_status(owner_user_id, str(job_id), ReadingStatus.COMPLETED)
         return {"status": "completed"}
     except Exception as exc:
         logger.exception(
@@ -120,7 +140,7 @@ async def process_reading(
             extra={
                 "reading_id": reading_id,
                 "owner_user_id": owner_user_id,
-                "vendor": selection.vendor,
+                "vendor": event.get("vendor"),
             },
         )
         try:
@@ -135,6 +155,20 @@ async def process_reading(
                 "failed to mark reading failed",
                 extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
             )
+        if job_id:
+            try:
+                repo.set_job_status(
+                    owner_user_id,
+                    str(job_id),
+                    ReadingStatus.FAILED,
+                    error=JOB_FAILURE_MESSAGES[current_stage],
+                    failed_step=current_stage.value,
+                )
+            except Exception:
+                logger.exception(
+                    "failed to mark job failed",
+                    extra={"job_id": job_id, "owner_user_id": owner_user_id},
+                )
         raise
     finally:
         for temporary_path in Path("/tmp").glob(f"{reading_id}*"):
