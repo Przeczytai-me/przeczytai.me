@@ -55,6 +55,7 @@ class ReadingRepository:
             "voice": voice,
             "abbreviation_readings": abbreviation_readings,
             "status": ReadingStatus.UPLOADED,
+            "attempts": 1,
             "metadata": {},
             "char_count": char_count,
             "created_at": now,
@@ -63,6 +64,16 @@ class ReadingRepository:
 
         self.table.put_item(Item=item)
         return item
+
+    def increment_attempts(self, owner_user_id: str, reading_id: str) -> int:
+        response = self.table.update_item(
+            Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"},
+            UpdateExpression="SET attempts = if_not_exists(attempts, :one) + :one",
+            ConditionExpression="attribute_exists(reading_id)",
+            ExpressionAttributeValues={":one": 1},
+            ReturnValues="UPDATED_NEW",
+        )
+        return int(response["Attributes"]["attempts"])
 
     def next_id(self) -> str:
         return str(ulid.new())

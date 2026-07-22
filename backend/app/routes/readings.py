@@ -8,6 +8,7 @@ from app.config import Settings, get_settings
 from app.errors import ApiException
 from app.models import (
     AbbreviationReading,
+    Job,
     Reading,
     ReadingCreateRequest,
     ReadingListResponse,
@@ -33,6 +34,11 @@ REQUIRED_READING_FIELDS = {
     "char_count",
     "created_at",
     "updated_at",
+}
+TERMINAL_READING_STATUSES = {
+    ReadingStatus.COMPLETED,
+    ReadingStatus.FAILED,
+    ReadingStatus.FAILED_TO_START,
 }
 
 
@@ -215,6 +221,51 @@ async def get_reading(
     repo: ReadingRepository = Depends(get_reading_repository),
 ) -> Reading:
     return _reading(_get_user_reading(user.user_id, reading_id, repo))
+
+
+@router.post("/{reading_id}/retry", response_model=Job, status_code=status.HTTP_202_ACCEPTED)
+async def retry_reading(
+    reading_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: ReadingRepository = Depends(get_reading_repository),
+) -> Job:
+    item = _get_user_reading(user.user_id, reading_id, repo)
+    if item["status"] not in TERMINAL_READING_STATUSES:
+        raise ApiException(
+            "conflict",
+            "A processing attempt is already active for this reading",
+            409,
+        )
+
+    attempt = repo.increment_attempts(user.user_id, reading_id)
+    job = repo.create_job(user.user_id, reading_id, attempt)
+    repo.set_status(user.user_id, reading_id, ReadingStatus.UPLOADED)
+    try:
+        repo.start_processing(
+            user.user_id,
+            reading_id,
+            item["original_text_key"],
+            item["vendor"],
+            item["voice"],
+            job["job_id"],
+        )
+    except ProcessingStartError as exc:
+        repo.mark_processing_start_failed(user.user_id, reading_id)
+        repo.set_job_status(
+            user.user_id,
+            job["job_id"],
+            ReadingStatus.FAILED_TO_START,
+            error="Failed to start reading processing",
+        )
+        raise ApiException(
+            "processing_start_failed",
+            "Failed to start reading processing",
+            500,
+        ) from exc
+
+    from app.routes.jobs import _job
+
+    return _job(job)
 
 
 @router.delete("/{reading_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -24,11 +24,25 @@ class FileStorage:
     def original_text_key(self, owner_user_id: str, reading_id: str) -> str:
         return self._key(owner_user_id, reading_id, "original.txt")
 
-    def corrected_text_key(self, owner_user_id: str, reading_id: str) -> str:
-        return self._key(owner_user_id, reading_id, "corrected.md")
+    def corrected_text_key(
+        self, owner_user_id: str, reading_id: str, job_id: str | None = None
+    ) -> str:
+        filename = "corrected.md" if job_id is None else f"corrected-{job_id}.md"
+        return self._key(owner_user_id, reading_id, filename)
 
-    def recording_key(self, owner_user_id: str, reading_id: str, extension: str = "mp3") -> str:
-        return self._key(owner_user_id, reading_id, f"recording.{extension}")
+    def recording_key(
+        self,
+        owner_user_id: str,
+        reading_id: str,
+        extension: str = "mp3",
+        job_id: str | None = None,
+    ) -> str:
+        filename = (
+            f"recording.{extension}"
+            if job_id is None
+            else f"recording-{job_id}.{extension}"
+        )
+        return self._key(owner_user_id, reading_id, filename)
 
     def put_text(self, key: str, content: str, content_type: str) -> None:
         self.put_bytes(key, content.encode(), content_type)

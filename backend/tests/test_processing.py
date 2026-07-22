@@ -28,11 +28,21 @@ class FakeStorage:
         del content_type
         self.bytes[key] = content
 
-    def corrected_text_key(self, owner_user_id: str, reading_id: str) -> str:
-        return f"users/{owner_user_id}/readings/{reading_id}/corrected.md"
+    def corrected_text_key(
+        self, owner_user_id: str, reading_id: str, job_id: str | None = None
+    ) -> str:
+        filename = "corrected.md" if job_id is None else f"corrected-{job_id}.md"
+        return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
 
-    def recording_key(self, owner_user_id: str, reading_id: str, extension: str = "mp3") -> str:
-        return f"users/{owner_user_id}/readings/{reading_id}/recording.{extension}"
+    def recording_key(
+        self,
+        owner_user_id: str,
+        reading_id: str,
+        extension: str = "mp3",
+        job_id: str | None = None,
+    ) -> str:
+        filename = f"recording.{extension}" if job_id is None else f"recording-{job_id}.{extension}"
+        return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
 
 
 class FakeRepo:
