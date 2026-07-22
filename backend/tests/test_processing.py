@@ -5,6 +5,7 @@ import pytest
 
 from app import models
 from app.config import Settings
+from app.normalization import RULE_BASED_NORMALIZATION_VERSION
 from app.processing import process_reading
 from app.splitting import split_text
 from app.tts import DEFAULT_TTS_VENDOR, EDGE_TTS_VOICE, OPENAI_TTS_MODEL, TtsSelection
@@ -145,7 +146,7 @@ def test_processing_generates_same_text_and_recording() -> None:
         "metadata": {
             "processor": DEFAULT_TTS_VENDOR,
             "voice": EDGE_TTS_VOICE,
-            "normalization": "regex-v1",
+            "normalization": RULE_BASED_NORMALIZATION_VERSION,
             "chunks": 1,
             "merge": "byte-concat-v1",
         },
@@ -187,7 +188,7 @@ def test_processing_uses_requested_voice() -> None:
     assert repo.completed["metadata"] == {
         "processor": DEFAULT_TTS_VENDOR,
         "voice": "en-US-EmmaMultilingualNeural",
-        "normalization": "regex-v1",
+        "normalization": RULE_BASED_NORMALIZATION_VERSION,
         "chunks": 1,
         "merge": "byte-concat-v1",
     }
@@ -227,7 +228,7 @@ def test_processing_uses_requested_openai_vendor() -> None:
         "processor": "openai",
         "voice": "coral",
         "model": OPENAI_TTS_MODEL,
-        "normalization": "regex-v1",
+        "normalization": RULE_BASED_NORMALIZATION_VERSION,
         "chunks": 1,
         "merge": "byte-concat-v1",
     }
@@ -298,7 +299,10 @@ def test_processing_normalizes_dirty_text() -> None:
     assert storage.texts[corrected_text_key] == expected
     assert storage.bytes[recording_key].endswith(expected.encode())
     assert repo.completed is not None
-    assert repo.completed["metadata"]["normalization"] == "regex-v1"
+    assert (
+        repo.completed["metadata"]["normalization"]
+        == RULE_BASED_NORMALIZATION_VERSION
+    )
 
 
 def test_processing_falls_back_when_normalize_raises(monkeypatch) -> None:
@@ -401,7 +405,10 @@ def test_processing_falls_back_to_regex_when_ai_normalize_raises(monkeypatch) ->
     assert result == {"status": "completed"}
     assert storage.texts[corrected_text_key] == "Ala ma kota."
     assert repo.completed is not None
-    assert repo.completed["metadata"]["normalization"] == "regex-v1"
+    assert (
+        repo.completed["metadata"]["normalization"]
+        == RULE_BASED_NORMALIZATION_VERSION
+    )
 
 
 def test_processing_synthesizes_and_merges_multiple_chunks_in_order() -> None:
