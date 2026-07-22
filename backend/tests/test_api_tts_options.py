@@ -1,77 +1,50 @@
 import re
 
 from app.config import Settings
-from app.tts import (
-    DEFAULT_TTS_VENDOR,
-    EDGE_TTS_VOICE,
-    EDGE_TTS_VOICES,
-    OPENAI_TTS_MODEL,
-    OPENAI_TTS_VOICE,
-    OPENAI_TTS_VOICES,
-)
+from app.tts import EDGE_TTS_VOICES, OPENAI_TTS_MODEL, OPENAI_TTS_VOICES
 from test_api import client
 
 
-def _language(provider_voice: str) -> str | None:
-    match = re.match(r"^([a-z]{2}-[A-Z]{2})-", provider_voice)
-    return match.group(1) if match else None
+def _language(provider_id: str) -> str:
+    if "Multilingual" in provider_id:
+        return "multilingual"
+    match = re.match(r"^([a-z]{2}-[A-Z]{2})-", provider_id)
+    return match.group(1) if match else "multilingual"
 
 
-def _voice_options(voices: dict[str, str]) -> list[dict[str, str | None]]:
+def _voice_options(
+    voices: dict[str, str], *, openai: bool = False
+) -> list[dict[str, str | None]]:
     return [
         {
             "id": voice_id,
+            "provider_id": provider_id,
             "label": voice_id.capitalize(),
-            "provider_voice": provider_voice,
-            "language": _language(provider_voice),
+            "language": "multilingual" if openai else _language(provider_id),
             "preview_url": None,
         }
-        for voice_id, provider_voice in voices.items()
+        for voice_id, provider_id in voices.items()
     ]
 
 
-def test_tts_options_returns_edge_tts_catalog() -> None:
-    """Return the complete Edge TTS catalog in its configured order."""
-    test_client, _ = client(settings=Settings(max_text_chars=10, openai_tts_enabled=False))
-
-    response = test_client.get("/api/v1/tts-options")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "default_vendor": "edge-tts",
-        "vendors": [
-            {
-                "id": "edge-tts",
-                "label": "Edge TTS",
-                "model": None,
-                "default_voice": "Zofia",
-                "voices": _voice_options(EDGE_TTS_VOICES),
-            }
-        ],
-    }
+EDGE_OPTIONS = {
+    "vendors": [{"id": "edge-tts", "label": "Edge TTS"}],
+    "models": [{"id": "edge-tts", "vendor_id": "edge-tts", "label": "Edge TTS"}],
+    "voices": _voice_options(EDGE_TTS_VOICES),
+    "pronunciation_styles": [
+        {"id": "natural", "label": "Naturalny"},
+        {"id": "clear", "label": "Wyraźny"},
+    ],
+    "defaults": {
+        "model": "edge-tts",
+        "voice": "Zofia",
+        "pronunciation_style": "natural",
+    },
+}
 
 
-def test_tts_options_includes_openai_when_enabled() -> None:
-    """Advertise the complete OpenAI catalog only when it is enabled."""
-    test_client, _ = client(
-        settings=Settings(max_text_chars=10, openai_tts_enabled=True)
-    )
-
-    response = test_client.get("/api/v1/tts-options")
-
-    assert response.status_code == 200
-    openai = response.json()["vendors"][1]
-    assert openai == {
-        "id": "openai",
-        "label": "OpenAI",
-        "model": "gpt-4o-mini-tts",
-        "default_voice": "alloy",
-        "voices": _voice_options(OPENAI_TTS_VOICES),
-    }
-
-
-def test_tts_options_excludes_openai_when_disabled() -> None:
-    """Do not advertise OpenAI when the effective settings disable it."""
+def test_tts_options_returns_frontend_edge_catalog() -> None:
+    """Return the frontend contract with the complete ordered Edge catalog."""
     test_client, _ = client(
         settings=Settings(max_text_chars=10, openai_tts_enabled=False)
     )
@@ -79,11 +52,11 @@ def test_tts_options_excludes_openai_when_disabled() -> None:
     response = test_client.get("/api/v1/tts-options")
 
     assert response.status_code == 200
-    assert [vendor["id"] for vendor in response.json()["vendors"]] == ["edge-tts"]
+    assert response.json() == EDGE_OPTIONS
 
 
-def test_tts_options_defaults_use_friendly_voice_ids() -> None:
-    """Expose registry defaults as stable frontend-facing identifiers."""
+def test_tts_options_adds_openai_catalog_when_enabled() -> None:
+    """Append the OpenAI vendor, model, and voices only when configured."""
     test_client, _ = client(
         settings=Settings(max_text_chars=10, openai_tts_enabled=True)
     )
@@ -91,40 +64,56 @@ def test_tts_options_defaults_use_friendly_voice_ids() -> None:
     response = test_client.get("/api/v1/tts-options")
 
     assert response.status_code == 200
-    body = response.json()
-    vendors = {vendor["id"]: vendor for vendor in body["vendors"]}
-    assert body["default_vendor"] == DEFAULT_TTS_VENDOR == "edge-tts"
-    assert vendors["edge-tts"]["default_voice"] == "Zofia"
-    assert EDGE_TTS_VOICES["Zofia"] == EDGE_TTS_VOICE
-    assert vendors["openai"]["default_voice"] == "alloy"
-    assert OPENAI_TTS_VOICES["alloy"] == OPENAI_TTS_VOICE
-    assert vendors["openai"]["model"] == OPENAI_TTS_MODEL == "gpt-4o-mini-tts"
+    assert response.json() == {
+        **EDGE_OPTIONS,
+        "vendors": EDGE_OPTIONS["vendors"] + [{"id": "openai", "label": "OpenAI"}],
+        "models": EDGE_OPTIONS["models"]
+        + [
+            {
+                "id": OPENAI_TTS_MODEL,
+                "vendor_id": "openai",
+                "label": "OpenAI TTS",
+            }
+        ],
+        "voices": EDGE_OPTIONS["voices"]
+        + _voice_options(OPENAI_TTS_VOICES, openai=True),
+    }
 
 
-def test_tts_options_derives_languages_from_provider_voices() -> None:
-    """Derive locale languages and leave non-locale provider voices null."""
+def test_tts_options_uses_multilingual_language_for_multilingual_voices() -> None:
+    """Label multilingual Edge voices independently of their locale prefix."""
     test_client, _ = client(
-        settings=Settings(max_text_chars=10, openai_tts_enabled=True)
+        settings=Settings(max_text_chars=10, openai_tts_enabled=False)
     )
 
-    response = test_client.get("/api/v1/tts-options")
+    voices = {
+        voice["id"]: voice
+        for voice in test_client.get("/api/v1/tts-options").json()["voices"]
+    }
 
-    assert response.status_code == 200
-    vendors = {vendor["id"]: vendor for vendor in response.json()["vendors"]}
-    assert [voice["language"] for voice in vendors["edge-tts"]["voices"]] == [
-        _language(provider_voice) for provider_voice in EDGE_TTS_VOICES.values()
-    ]
-    assert [voice["language"] for voice in vendors["openai"]["voices"]] == [
-        None for _ in OPENAI_TTS_VOICES
-    ]
-    edge_voices = {voice["id"]: voice for voice in vendors["edge-tts"]["voices"]}
-    assert edge_voices["Zofia"]["language"] == "pl-PL"
-    assert edge_voices["Ava"]["language"] == "en-US"
+    assert voices["Zofia"]["language"] == "pl-PL"
+    assert voices["Ava"]["language"] == "multilingual"
+
+
+def test_tts_options_excludes_all_openai_entries_when_disabled() -> None:
+    """Exclude every OpenAI catalog entry when OpenAI is disabled."""
+    test_client, _ = client(
+        settings=Settings(max_text_chars=10, openai_tts_enabled=False)
+    )
+
+    body = test_client.get("/api/v1/tts-options").json()
+
+    assert [vendor["id"] for vendor in body["vendors"]] == ["edge-tts"]
+    assert [model["id"] for model in body["models"]] == ["edge-tts"]
+    assert [voice["id"] for voice in body["voices"]] == list(EDGE_TTS_VOICES)
 
 
 def test_tts_options_requires_authentication() -> None:
     """Reject TTS options requests without JWT claims."""
-    test_client, _ = client(auth=False)
+    test_client, _ = client(
+        auth=False,
+        settings=Settings(max_text_chars=10, openai_tts_enabled=False),
+    )
 
     response = test_client.get("/api/v1/tts-options")
 
@@ -133,10 +122,12 @@ def test_tts_options_requires_authentication() -> None:
 
 
 def test_tts_options_appears_in_openapi() -> None:
-    """Publish the TTS options endpoint in the OpenAPI schema."""
-    test_client, _ = client()
+    """Publish the protected TTS options endpoint in OpenAPI."""
+    test_client, _ = client(
+        settings=Settings(max_text_chars=10, openai_tts_enabled=False)
+    )
 
     response = test_client.get("/openapi.json")
 
     assert response.status_code == 200
-    assert "/api/v1/tts-options" in response.json()["paths"]
+    assert "get" in response.json()["paths"]["/api/v1/tts-options"]

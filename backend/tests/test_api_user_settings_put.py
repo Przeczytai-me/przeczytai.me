@@ -1,21 +1,17 @@
+from copy import deepcopy
+from datetime import datetime
+
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
-from app.routes.user_settings import get_user_settings_repository
 from app.tts import EDGE_TTS_VOICES, OPENAI_TTS_VOICES
-from test_api import client
-from test_api_user_settings import EXPECTED_DEFAULTS, FakeUserSettingsRepository
-
-
-class RecordingFakeUserSettingsRepository(FakeUserSettingsRepository):
-    def __init__(self, items: dict[str, dict] | None = None) -> None:
-        super().__init__(items)
-        self.put_calls: list[tuple[str, dict]] = []
-
-    def put(self, owner_user_id: str, overrides: dict) -> None:
-        self.put_calls.append((owner_user_id, dict(overrides)))
-        super().put(owner_user_id, overrides)
+from test_api_user_settings import (
+    DEFAULT_PUT_SETTINGS,
+    DEFAULT_SETTINGS,
+    EPOCH_UPDATED_AT,
+    FakeUserSettingsRepository,
+    SAVED_UPDATED_AT,
+    settings_client,
+)
 
 
 class FailOnReadingRepositoryAccess:
@@ -25,296 +21,428 @@ class FailOnReadingRepositoryAccess:
         raise AssertionError(f"Reading repository was accessed via {name}")
 
 
-def settings_client(
-    repo: RecordingFakeUserSettingsRepository | None = None,
-    auth: bool = True,
-    reading_repo: object | None = None,
-) -> tuple[TestClient, RecordingFakeUserSettingsRepository]:
-    test_client, _ = client(repo=reading_repo, auth=auth)
-    repo = repo or RecordingFakeUserSettingsRepository()
-    app.dependency_overrides[get_user_settings_repository] = lambda: repo
-    return test_client, repo
+def payload(**changes: object) -> dict:
+    return deepcopy(DEFAULT_PUT_SETTINGS) | changes
 
 
-def assert_validation_error(
-    response: object,
-    repo: RecordingFakeUserSettingsRepository,
-) -> None:
+def assert_iso_timestamp(value: str) -> None:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    assert parsed.tzinfo is not None
+
+
+def assert_validation_error(response: object, repo: FakeUserSettingsRepository) -> None:
     assert getattr(response, "status_code") == 422
     assert getattr(response, "json")()["error"]["code"] == "validation_error"
     assert repo.put_calls == []
 
 
-def test_put_settings_full_replaces_overrides_and_returns_effective_settings() -> None:
-    """Replace the stored record once and return the resulting effective settings."""
-    repo = RecordingFakeUserSettingsRepository(
+def test_put_settings_full_replaces_record_and_returns_bare_settings() -> None:
+    """Replace the stored record with the complete validated settings object."""
+    repo = FakeUserSettingsRepository(
         {
             "user_1": {
-                "tts_voice": "Marek",
-                "playback_speed": 0.75,
+                "voice": "Ava",
                 "unknown_setting": "stale",
+                "updated_at": "2025-01-01T00:00:00Z",
             }
         }
     )
     test_client, _ = settings_client(repo)
-    payload = {
-        "tts_vendor": "openai",
-        "tts_voice": "alloy",
-        "pronunciation_style": "Czytaj spokojnie",
-        "playback_speed": 1.5,
-        "sentence_highlighting": False,
-        "export_format": "mp3",
-        "abbreviation_readings": [
+    request_body = payload(
+        voice="Marek",
+        pronunciation_style="clear",
+        playback_speed=1.5,
+        sentence_highlighting=False,
+        custom_abbreviation_readings=[
             {"abbreviation": " AI ", "read_as": " sztuczna inteligencja "},
             {"abbreviation": " dr ", "read_as": " doktor "},
         ],
-    }
-    stored = payload | {
-        "abbreviation_readings": [
+        exports={
+            "filename_pattern": "czytanie-{reading_id}",
+            "mp3_quality": "standard",
+            "text_format": "txt",
+        },
+    )
+    normalized = request_body | {
+        "custom_abbreviation_readings": [
             {"abbreviation": "AI", "read_as": "sztuczna inteligencja"},
             {"abbreviation": "dr", "read_as": "doktor"},
         ]
     }
 
-    response = test_client.put("/api/v1/settings", json=payload)
+    response = test_client.put("/api/v1/settings", json=request_body)
 
     assert response.status_code == 200
-    assert response.json() == {
-        "settings": EXPECTED_DEFAULTS | stored,
-        "defaults": EXPECTED_DEFAULTS,
-    }
-    assert repo.items["user_1"] == stored
-    assert repo.put_calls == [("user_1", stored)]
+    assert response.json() == normalized | {"updated_at": SAVED_UPDATED_AT}
+    assert repo.put_calls == [("user_1", normalized)]
+    assert "updated_at" not in repo.put_calls[0][1]
+    assert_iso_timestamp(response.json()["updated_at"])
+    assert response.json()["updated_at"] != EPOCH_UPDATED_AT
 
 
-def test_put_settings_partial_body_removes_unmentioned_overrides() -> None:
-    """Treat omitted fields as resets during a full replacement."""
-    repo = RecordingFakeUserSettingsRepository(
-        {"user_1": {"tts_voice": "Marek", "sentence_highlighting": False}}
+def test_put_settings_round_trip_exactly_matches_followup_get() -> None:
+    """Return exactly the replaced values from a subsequent GET."""
+    test_client, repo = settings_client()
+    request_body = payload(
+        voice="Marek",
+        playback_speed=1.75,
+        sentence_highlighting=False,
+    )
+
+    put_response = test_client.put("/api/v1/settings", json=request_body)
+    get_response = test_client.get("/api/v1/settings")
+
+    assert put_response.status_code == 200
+    assert get_response.status_code == 200
+    assert get_response.json() == put_response.json()
+    assert repo.put_calls == [("user_1", request_body)]
+
+
+def test_put_settings_can_reset_every_value_to_defaults() -> None:
+    """Reset saved settings by replacing them with the complete defaults."""
+    repo = FakeUserSettingsRepository(
+        {"user_1": payload(voice="Marek") | {"updated_at": SAVED_UPDATED_AT}}
     )
     test_client, _ = settings_client(repo)
 
-    response = test_client.put("/api/v1/settings", json={"playback_speed": 1.25})
+    response = test_client.put("/api/v1/settings", json=DEFAULT_PUT_SETTINGS)
 
     assert response.status_code == 200
-    assert response.json() == {
-        "settings": EXPECTED_DEFAULTS | {"playback_speed": 1.25},
-        "defaults": EXPECTED_DEFAULTS,
-    }
-    assert repo.items["user_1"] == {"playback_speed": 1.25}
-    assert repo.put_calls == [("user_1", {"playback_speed": 1.25})]
+    assert response.json() == DEFAULT_SETTINGS | {"updated_at": SAVED_UPDATED_AT}
+    assert repo.put_calls == [("user_1", DEFAULT_PUT_SETTINGS)]
 
 
-def test_put_settings_accepts_empty_object_and_stores_no_overrides() -> None:
-    """Allow every request field to be omitted."""
-    repo = RecordingFakeUserSettingsRepository({"user_1": {"tts_voice": "Marek"}})
-    test_client, _ = settings_client(repo)
+def test_put_settings_ignores_client_updated_at() -> None:
+    """Ignore a client timestamp and return a server-set timestamp."""
+    test_client, repo = settings_client()
+    request_body = payload(updated_at="1999-12-31T23:59:59Z")
 
-    response = test_client.put("/api/v1/settings", json={})
+    response = test_client.put("/api/v1/settings", json=request_body)
 
     assert response.status_code == 200
-    assert response.json() == {"settings": EXPECTED_DEFAULTS, "defaults": EXPECTED_DEFAULTS}
-    assert repo.items["user_1"] == {}
-    assert repo.put_calls == [("user_1", {})]
+    assert response.json()["updated_at"] == SAVED_UPDATED_AT
+    assert repo.put_calls == [("user_1", DEFAULT_PUT_SETTINGS)]
 
 
-def test_put_settings_accepts_null_for_every_field_and_stores_no_overrides() -> None:
-    """Allow null for all seven fields and reset each one to its default."""
-    repo = RecordingFakeUserSettingsRepository(
-        {"user_1": EXPECTED_DEFAULTS | {"tts_voice": "Marek"}}
-    )
-    test_client, _ = settings_client(repo)
-    payload = {key: None for key in EXPECTED_DEFAULTS}
+def test_put_settings_allows_omitted_nullable_fallback_model() -> None:
+    """Default an omitted nullable fallback model to null on full replacement."""
+    test_client, repo = settings_client()
+    request_body = payload()
+    request_body.pop("fallback_model")
 
-    response = test_client.put("/api/v1/settings", json=payload)
+    response = test_client.put("/api/v1/settings", json=request_body)
 
     assert response.status_code == 200
-    assert response.json() == {"settings": EXPECTED_DEFAULTS, "defaults": EXPECTED_DEFAULTS}
-    assert repo.items["user_1"] == {}
-    assert repo.put_calls == [("user_1", {})]
-
-
-def test_put_settings_uses_authenticated_owner_and_never_touches_readings() -> None:
-    """Persist only for the authenticated owner without reading or writing readings."""
-    repo = RecordingFakeUserSettingsRepository()
-    test_client, _ = settings_client(repo, reading_repo=FailOnReadingRepositoryAccess())
-
-    response = test_client.put("/api/v1/settings", json={"tts_voice": "Marek"})
-
-    assert response.status_code == 200
-    assert repo.put_calls == [("user_1", {"tts_voice": "Marek"})]
+    assert response.json()["fallback_model"] is None
+    assert repo.put_calls == [("user_1", DEFAULT_PUT_SETTINGS)]
 
 
 @pytest.mark.parametrize(
-    ("vendor", "voice"),
+    "missing_field",
     [
-        *[(None, voice) for voice in EDGE_TTS_VOICES],
-        *[(None, voice) for voice in EDGE_TTS_VOICES.values()],
-        *[("openai", voice) for voice in OPENAI_TTS_VOICES],
-        *[("openai", voice) for voice in OPENAI_TTS_VOICES.values()],
+        "reading_model",
+        "voice",
+        "pronunciation_style",
+        "playback_speed",
+        "sentence_highlighting",
+        "custom_abbreviation_readings",
+        "exports",
     ],
 )
-def test_put_settings_accepts_catalog_voice_keys_and_provider_values(
-    vendor: str | None,
-    voice: str,
+def test_put_settings_rejects_missing_required_field(missing_field: str) -> None:
+    """Reject a request that omits any required full-object field."""
+    test_client, repo = settings_client()
+    request_body = payload()
+    request_body.pop(missing_field)
+
+    response = test_client.put("/api/v1/settings", json=request_body)
+
+    assert_validation_error(response, repo)
+
+
+@pytest.mark.parametrize("reading_model", ["unknown", "openai", "EDGE-TTS", ""])
+def test_put_settings_rejects_unadvertised_reading_model(reading_model: str) -> None:
+    """Reject reading models not advertised by the configured catalog."""
+    test_client, repo = settings_client()
+
+    response = test_client.put(
+        "/api/v1/settings", json=payload(reading_model=reading_model)
+    )
+
+    assert_validation_error(response, repo)
+
+
+def test_put_settings_rejects_openai_model_when_disabled() -> None:
+    """Reject the OpenAI model when its provider is not configured."""
+    test_client, repo = settings_client(openai_enabled=False)
+
+    response = test_client.put(
+        "/api/v1/settings",
+        json=payload(reading_model="gpt-4o-mini-tts", voice="alloy"),
+    )
+
+    assert_validation_error(response, repo)
+
+
+def test_put_settings_accepts_openai_model_when_enabled() -> None:
+    """Accept the OpenAI model and one of its voices when configured."""
+    test_client, repo = settings_client(openai_enabled=True)
+    request_body = payload(reading_model="gpt-4o-mini-tts", voice="alloy")
+
+    response = test_client.put("/api/v1/settings", json=request_body)
+
+    assert response.status_code == 200
+    assert response.json()["reading_model"] == "gpt-4o-mini-tts"
+    assert response.json()["voice"] == "alloy"
+    assert repo.put_calls == [("user_1", request_body)]
+
+
+@pytest.mark.parametrize("fallback_model", [None, "edge-tts"])
+def test_put_settings_accepts_nullable_advertised_fallback(
+    fallback_model: str | None,
 ) -> None:
-    """Accept every friendly voice key and provider value for the effective vendor."""
+    """Accept null or an advertised model as the fallback."""
     test_client, repo = settings_client()
-    payload = {"tts_voice": voice}
-    if vendor is not None:
-        payload["tts_vendor"] = vendor
+    request_body = payload(fallback_model=fallback_model)
 
-    response = test_client.put("/api/v1/settings", json=payload)
+    response = test_client.put("/api/v1/settings", json=request_body)
 
     assert response.status_code == 200
-    assert repo.put_calls == [("user_1", payload)]
+    assert repo.put_calls == [("user_1", request_body)]
 
 
-@pytest.mark.parametrize("tts_vendor", ["azure", "EDGE-TTS", "", "open-ai"])
-def test_put_settings_rejects_unsupported_vendor(tts_vendor: str) -> None:
-    """Reject every vendor outside the two supported identifiers before persistence."""
-    test_client, repo = settings_client()
+@pytest.mark.parametrize("fallback_model", ["unknown", "gpt-4o-mini-tts"])
+def test_put_settings_rejects_unadvertised_fallback_model(fallback_model: str) -> None:
+    """Reject a fallback model absent from the configured catalog."""
+    test_client, repo = settings_client(openai_enabled=False)
 
-    response = test_client.put("/api/v1/settings", json={"tts_vendor": tts_vendor})
+    response = test_client.put(
+        "/api/v1/settings", json=payload(fallback_model=fallback_model)
+    )
 
     assert_validation_error(response, repo)
+
+
+def test_put_settings_accepts_enabled_openai_fallback_model() -> None:
+    """Accept the OpenAI model as fallback when it is advertised."""
+    test_client, repo = settings_client(openai_enabled=True)
+    request_body = payload(fallback_model="gpt-4o-mini-tts")
+
+    response = test_client.put("/api/v1/settings", json=request_body)
+
+    assert response.status_code == 200
+    assert repo.put_calls == [("user_1", request_body)]
+
+
+@pytest.mark.parametrize("voice", [*EDGE_TTS_VOICES, *EDGE_TTS_VOICES.values()])
+def test_put_settings_accepts_and_normalizes_every_edge_voice(voice: str) -> None:
+    """Normalize every Edge friendly key and provider value to its friendly key."""
+    test_client, repo = settings_client()
+    expected_voice = next(
+        key for key, provider_id in EDGE_TTS_VOICES.items() if voice in {key, provider_id}
+    )
+    expected = payload(voice=expected_voice)
+
+    response = test_client.put("/api/v1/settings", json=payload(voice=voice))
+
+    assert response.status_code == 200
+    assert response.json()["voice"] == expected_voice
+    assert repo.put_calls == [("user_1", expected)]
+
+
+@pytest.mark.parametrize("voice", [*OPENAI_TTS_VOICES, *OPENAI_TTS_VOICES.values()])
+def test_put_settings_accepts_every_openai_voice_when_enabled(voice: str) -> None:
+    """Accept every OpenAI voice for the advertised OpenAI model."""
+    test_client, repo = settings_client(openai_enabled=True)
+    request_body = payload(reading_model="gpt-4o-mini-tts", voice=voice)
+
+    response = test_client.put("/api/v1/settings", json=request_body)
+
+    assert response.status_code == 200
+    assert response.json()["voice"] == voice
+    assert repo.put_calls == [("user_1", request_body)]
 
 
 @pytest.mark.parametrize(
-    "payload",
+    "request_body",
     [
-        {"tts_voice": "alloy"},
-        {"tts_vendor": "openai", "tts_voice": "Zofia"},
-        {"tts_voice": "not-a-real-voice"},
-        {"tts_vendor": "openai", "tts_voice": "not-a-real-voice"},
+        payload(voice="alloy"),
+        payload(reading_model="gpt-4o-mini-tts", voice="Zofia"),
+        payload(voice="not-a-real-voice"),
     ],
 )
-def test_put_settings_rejects_voice_outside_effective_vendor_catalog(payload: dict) -> None:
-    """Reject voices not found in the effective vendor's catalog before persistence."""
-    test_client, repo = settings_client()
+def test_put_settings_rejects_unknown_or_cross_vendor_voice(request_body: dict) -> None:
+    """Reject voices unknown to or outside the reading model's vendor."""
+    openai_enabled = request_body["reading_model"] == "gpt-4o-mini-tts"
+    test_client, repo = settings_client(openai_enabled=openai_enabled)
 
-    response = test_client.put("/api/v1/settings", json=payload)
-
-    assert_validation_error(response, repo)
-
-
-def test_put_settings_uses_default_vendor_when_vendor_is_omitted() -> None:
-    """Validate an omitted-vendor voice against edge-tts even after an OpenAI override."""
-    repo = RecordingFakeUserSettingsRepository({"user_1": {"tts_vendor": "openai"}})
-    test_client, _ = settings_client(repo)
-
-    response = test_client.put("/api/v1/settings", json={"tts_voice": "alloy"})
+    response = test_client.put("/api/v1/settings", json=request_body)
 
     assert_validation_error(response, repo)
-    assert repo.items["user_1"] == {"tts_vendor": "openai"}
 
 
-@pytest.mark.parametrize("playback_speed", [0.5, 2.0])
-def test_put_settings_accepts_playback_speed_boundaries(playback_speed: float) -> None:
-    """Accept playback speeds at both inclusive limits."""
+@pytest.mark.parametrize("pronunciation_style", ["natural", "clear"])
+def test_put_settings_accepts_supported_pronunciation_style(
+    pronunciation_style: str,
+) -> None:
+    """Accept both advertised pronunciation styles."""
     test_client, repo = settings_client()
+    request_body = payload(pronunciation_style=pronunciation_style)
 
-    response = test_client.put(
-        "/api/v1/settings",
-        json={"playback_speed": playback_speed},
-    )
+    response = test_client.put("/api/v1/settings", json=request_body)
 
     assert response.status_code == 200
-    assert repo.put_calls == [("user_1", {"playback_speed": playback_speed})]
+    assert repo.put_calls == [("user_1", request_body)]
 
 
-@pytest.mark.parametrize("playback_speed", [0.49, 2.01])
-def test_put_settings_rejects_playback_speed_outside_range(playback_speed: float) -> None:
-    """Reject playback speeds outside the inclusive range before persistence."""
+@pytest.mark.parametrize("pronunciation_style", ["expressive", "Natural", ""])
+def test_put_settings_rejects_unsupported_pronunciation_style(
+    pronunciation_style: str,
+) -> None:
+    """Reject pronunciation styles outside the advertised identifiers."""
     test_client, repo = settings_client()
 
     response = test_client.put(
         "/api/v1/settings",
-        json={"playback_speed": playback_speed},
+        json=payload(pronunciation_style=pronunciation_style),
     )
 
     assert_validation_error(response, repo)
 
 
-def test_put_settings_rejects_wrong_playback_speed_type() -> None:
-    """Return the standard validation error for a nonnumeric playback speed."""
+@pytest.mark.parametrize("playback_speed", [0.5, 1.0, 2.0])
+def test_put_settings_accepts_playback_speed_range(playback_speed: float) -> None:
+    """Accept playback speeds at and within both inclusive limits."""
     test_client, repo = settings_client()
+    request_body = payload(playback_speed=playback_speed)
 
-    response = test_client.put("/api/v1/settings", json={"playback_speed": "fast"})
-
-    assert_validation_error(response, repo)
-
-
-@pytest.mark.parametrize("export_format", ["wav", "ogg", "MP3"])
-def test_put_settings_rejects_export_format_other_than_mp3(export_format: str) -> None:
-    """Reject export formats other than the exact v1 mp3 identifier."""
-    test_client, repo = settings_client()
-
-    response = test_client.put("/api/v1/settings", json={"export_format": export_format})
-
-    assert_validation_error(response, repo)
-
-
-def test_put_settings_accepts_pronunciation_style_at_maximum_length() -> None:
-    """Accept a pronunciation style containing exactly 120 characters."""
-    test_client, repo = settings_client()
-    pronunciation_style = "x" * 120
-
-    response = test_client.put(
-        "/api/v1/settings",
-        json={"pronunciation_style": pronunciation_style},
-    )
+    response = test_client.put("/api/v1/settings", json=request_body)
 
     assert response.status_code == 200
-    assert repo.put_calls == [("user_1", {"pronunciation_style": pronunciation_style})]
+    assert repo.put_calls == [("user_1", request_body)]
 
 
-def test_put_settings_rejects_pronunciation_style_over_maximum_length() -> None:
-    """Reject a pronunciation style longer than 120 characters before persistence."""
+@pytest.mark.parametrize("playback_speed", [0.49, 2.01, "1.0", True])
+def test_put_settings_rejects_invalid_playback_speed(playback_speed: object) -> None:
+    """Reject out-of-range or non-strict playback speeds."""
     test_client, repo = settings_client()
 
     response = test_client.put(
-        "/api/v1/settings",
-        json={"pronunciation_style": "x" * 121},
+        "/api/v1/settings", json=payload(playback_speed=playback_speed)
     )
 
     assert_validation_error(response, repo)
 
 
-@pytest.mark.parametrize("sentence_highlighting", ["true", 1, 0])
+@pytest.mark.parametrize("sentence_highlighting", ["true", 1, 0, None])
 def test_put_settings_rejects_non_boolean_sentence_highlighting(
     sentence_highlighting: object,
 ) -> None:
-    """Reject values that are not JSON booleans before persistence."""
+    """Reject values that are not strict JSON booleans."""
     test_client, repo = settings_client()
 
     response = test_client.put(
         "/api/v1/settings",
-        json={"sentence_highlighting": sentence_highlighting},
+        json=payload(sentence_highlighting=sentence_highlighting),
     )
 
     assert_validation_error(response, repo)
 
 
-def test_put_settings_trims_abbreviation_entries_and_preserves_order() -> None:
-    """Trim valid abbreviation entries while preserving their request order."""
+def test_put_settings_rejects_empty_filename_pattern_after_trim() -> None:
+    """Reject an export filename pattern empty after trimming."""
     test_client, repo = settings_client()
-    payload = {
-        "abbreviation_readings": [
-            {"abbreviation": " AI ", "read_as": " sztuczna inteligencja "},
-            {"abbreviation": f" {'x' * 50} ", "read_as": f" {'y' * 200} "},
-        ]
-    }
-    stored_entries = [
+    exports = deepcopy(DEFAULT_PUT_SETTINGS["exports"])
+    exports["filename_pattern"] = " \t "
+
+    response = test_client.put("/api/v1/settings", json=payload(exports=exports))
+
+    assert_validation_error(response, repo)
+
+
+def test_put_settings_accepts_filename_pattern_at_maximum_length() -> None:
+    """Accept an export filename pattern containing exactly 120 characters."""
+    test_client, repo = settings_client()
+    exports = deepcopy(DEFAULT_PUT_SETTINGS["exports"])
+    exports["filename_pattern"] = "x" * 120
+    request_body = payload(exports=exports)
+
+    response = test_client.put("/api/v1/settings", json=request_body)
+
+    assert response.status_code == 200
+    assert repo.put_calls == [("user_1", request_body)]
+
+
+def test_put_settings_rejects_filename_pattern_over_maximum_length() -> None:
+    """Reject an export filename pattern longer than 120 characters."""
+    test_client, repo = settings_client()
+    exports = deepcopy(DEFAULT_PUT_SETTINGS["exports"])
+    exports["filename_pattern"] = "x" * 121
+
+    response = test_client.put("/api/v1/settings", json=payload(exports=exports))
+
+    assert_validation_error(response, repo)
+
+
+@pytest.mark.parametrize("mp3_quality", ["high", "STANDARD", ""])
+def test_put_settings_rejects_unsupported_mp3_quality(mp3_quality: str) -> None:
+    """Accept only the standard MP3 quality identifier."""
+    test_client, repo = settings_client()
+    exports = deepcopy(DEFAULT_PUT_SETTINGS["exports"])
+    exports["mp3_quality"] = mp3_quality
+
+    response = test_client.put("/api/v1/settings", json=payload(exports=exports))
+
+    assert_validation_error(response, repo)
+
+
+@pytest.mark.parametrize("text_format", ["md", "txt"])
+def test_put_settings_accepts_supported_text_format(text_format: str) -> None:
+    """Accept Markdown and plain-text export formats."""
+    test_client, repo = settings_client()
+    exports = deepcopy(DEFAULT_PUT_SETTINGS["exports"])
+    exports["text_format"] = text_format
+    request_body = payload(exports=exports)
+
+    response = test_client.put("/api/v1/settings", json=request_body)
+
+    assert response.status_code == 200
+    assert repo.put_calls == [("user_1", request_body)]
+
+
+@pytest.mark.parametrize("text_format", ["ssml", "pdf", "MD", ""])
+def test_put_settings_rejects_unsupported_text_format(text_format: str) -> None:
+    """Reject text export formats outside Markdown and plain text."""
+    test_client, repo = settings_client()
+    exports = deepcopy(DEFAULT_PUT_SETTINGS["exports"])
+    exports["text_format"] = text_format
+
+    response = test_client.put("/api/v1/settings", json=payload(exports=exports))
+
+    assert_validation_error(response, repo)
+
+
+def test_put_settings_trims_abbreviations_and_preserves_order() -> None:
+    """Trim abbreviation fields while preserving their request order."""
+    test_client, repo = settings_client()
+    readings = [
+        {"abbreviation": " AI ", "read_as": " sztuczna inteligencja "},
+        {"abbreviation": f" {'x' * 50} ", "read_as": f" {'y' * 200} "},
+    ]
+    normalized = [
         {"abbreviation": "AI", "read_as": "sztuczna inteligencja"},
         {"abbreviation": "x" * 50, "read_as": "y" * 200},
     ]
 
-    response = test_client.put("/api/v1/settings", json=payload)
+    response = test_client.put(
+        "/api/v1/settings", json=payload(custom_abbreviation_readings=readings)
+    )
 
     assert response.status_code == 200
-    assert response.json()["settings"]["abbreviation_readings"] == stored_entries
-    assert repo.put_calls == [("user_1", {"abbreviation_readings": stored_entries})]
+    assert response.json()["custom_abbreviation_readings"] == normalized
+    assert repo.put_calls == [
+        ("user_1", payload(custom_abbreviation_readings=normalized))
+    ]
 
 
 @pytest.mark.parametrize(
@@ -322,34 +450,17 @@ def test_put_settings_trims_abbreviation_entries_and_preserves_order() -> None:
     [
         {"abbreviation": "   ", "read_as": "czytaj"},
         {"abbreviation": "AI", "read_as": " \t\n"},
-    ],
-)
-def test_put_settings_rejects_empty_trimmed_abbreviation_fields(entry: dict) -> None:
-    """Reject abbreviation entries whose trimmed field is empty before persistence."""
-    test_client, repo = settings_client()
-
-    response = test_client.put(
-        "/api/v1/settings",
-        json={"abbreviation_readings": [entry]},
-    )
-
-    assert_validation_error(response, repo)
-
-
-@pytest.mark.parametrize(
-    "entry",
-    [
         {"abbreviation": "x" * 51, "read_as": "czytaj"},
         {"abbreviation": "AI", "read_as": "y" * 201},
     ],
 )
-def test_put_settings_rejects_overlong_abbreviation_fields(entry: dict) -> None:
-    """Reject abbreviation fields over their respective limits before persistence."""
+def test_put_settings_rejects_invalid_abbreviation_field(entry: dict) -> None:
+    """Reject empty or overlong trimmed abbreviation fields."""
     test_client, repo = settings_client()
 
     response = test_client.put(
         "/api/v1/settings",
-        json={"abbreviation_readings": [entry]},
+        json=payload(custom_abbreviation_readings=[entry]),
     )
 
     assert_validation_error(response, repo)
@@ -358,14 +469,14 @@ def test_put_settings_rejects_overlong_abbreviation_fields(entry: dict) -> None:
 def test_put_settings_rejects_more_than_100_abbreviation_entries() -> None:
     """Reject an abbreviation list containing more than 100 entries."""
     test_client, repo = settings_client()
-    entries = [
+    readings = [
         {"abbreviation": f"A{index}", "read_as": f"czytaj {index}"}
         for index in range(101)
     ]
 
     response = test_client.put(
         "/api/v1/settings",
-        json={"abbreviation_readings": entries},
+        json=payload(custom_abbreviation_readings=readings),
     )
 
     assert_validation_error(response, repo)
@@ -374,90 +485,37 @@ def test_put_settings_rejects_more_than_100_abbreviation_entries() -> None:
 def test_put_settings_rejects_casefolded_duplicate_abbreviations() -> None:
     """Reject duplicate abbreviations after trimming and Unicode casefolding."""
     test_client, repo = settings_client()
-    entries = [
+    readings = [
         {"abbreviation": " Straße ", "read_as": "ulica"},
         {"abbreviation": "STRASSE", "read_as": "ulica"},
     ]
 
     response = test_client.put(
         "/api/v1/settings",
-        json={"abbreviation_readings": entries},
+        json=payload(custom_abbreviation_readings=readings),
     )
 
     assert_validation_error(response, repo)
 
 
-def test_put_settings_validation_failure_preserves_existing_overrides() -> None:
-    """Leave the existing record intact when any request field is invalid."""
-    existing = {"tts_voice": "Marek", "playback_speed": 1.25}
-    repo = RecordingFakeUserSettingsRepository({"user_1": existing.copy()})
-    test_client, _ = settings_client(repo)
-
-    response = test_client.put(
-        "/api/v1/settings",
-        json={
-            "tts_voice": "Zofia",
-            "playback_speed": 1.5,
-            "export_format": "wav",
-        },
+def test_put_settings_uses_owner_and_never_touches_readings() -> None:
+    """Persist only for the authenticated owner without touching readings."""
+    test_client, repo = settings_client(
+        reading_repo=FailOnReadingRepositoryAccess()
     )
 
-    assert_validation_error(response, repo)
-    assert repo.items["user_1"] == existing
+    response = test_client.put("/api/v1/settings", json=payload())
 
-
-def test_put_settings_round_trip_matches_followup_get() -> None:
-    """Return the same effective settings from PUT and a subsequent GET."""
-    test_client, repo = settings_client()
-    payload = {
-        "tts_voice": "Marek",
-        "playback_speed": 1.75,
-        "sentence_highlighting": False,
-    }
-
-    put_response = test_client.put("/api/v1/settings", json=payload)
-    get_response = test_client.get("/api/v1/settings")
-
-    assert put_response.status_code == 200
-    assert get_response.status_code == 200
-    assert get_response.json() == put_response.json()
-    assert repo.put_calls == [("user_1", payload)]
-
-
-def test_put_settings_null_voice_resets_to_default_on_followup_get() -> None:
-    """Remove a null voice override and expose the default voice on the next GET."""
-    repo = RecordingFakeUserSettingsRepository({"user_1": {"tts_voice": "Marek"}})
-    test_client, _ = settings_client(repo)
-
-    put_response = test_client.put("/api/v1/settings", json={"tts_voice": None})
-    get_response = test_client.get("/api/v1/settings")
-
-    assert put_response.status_code == 200
-    assert repo.items["user_1"] == {}
-    assert "tts_voice" not in repo.items["user_1"]
-    assert repo.put_calls == [("user_1", {})]
-    assert get_response.status_code == 200
-    assert get_response.json()["settings"]["tts_voice"] == EXPECTED_DEFAULTS["tts_voice"]
-    assert get_response.json() == put_response.json()
+    assert response.status_code == 200
+    assert repo.put_calls == [("user_1", DEFAULT_PUT_SETTINGS)]
 
 
 def test_put_settings_requires_authentication() -> None:
-    """Reject PUT requests without JWT claims before persistence."""
+    """Reject unauthenticated replacement before persistence."""
     test_client, repo = settings_client(auth=False)
 
-    response = test_client.put("/api/v1/settings", json={"tts_voice": "Marek"})
+    response = test_client.put("/api/v1/settings", json=payload())
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "unauthorized"
-    assert repo.requested_user_ids == []
     assert repo.put_calls == []
-
-
-def test_put_settings_appears_in_openapi() -> None:
-    """Publish the PUT method for user settings in the OpenAPI schema."""
-    test_client, _ = settings_client()
-
-    response = test_client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "put" in response.json()["paths"]["/api/v1/settings"]
