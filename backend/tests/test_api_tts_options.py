@@ -32,7 +32,7 @@ def _voice_options(voices: dict[str, str]) -> list[dict[str, str | None]]:
 
 def test_tts_options_returns_edge_tts_catalog() -> None:
     """Return the complete Edge TTS catalog in its configured order."""
-    test_client, _ = client()
+    test_client, _ = client(settings=Settings(max_text_chars=10, openai_tts_enabled=False))
 
     response = test_client.get("/api/v1/tts-options")
 
