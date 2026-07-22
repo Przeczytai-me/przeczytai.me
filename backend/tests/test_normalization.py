@@ -63,37 +63,20 @@ def test_normalize_markdown_links_keeps_only_visible_text(source: str, expected:
 
 
 @pytest.mark.parametrize(
-    ("source", "expected"),
-    [
-        ("Np. to działa.", "Na przykład to działa."),
-        ("To np. działa.", "To na przykład działa."),
-        ("Tzn. to działa.", "To znaczy to działa."),
-        ("To tzn. działa.", "To to znaczy działa."),
-        ("M.in. to działa.", "Między innymi to działa."),
-        ("To m.in. działa.", "To między innymi działa."),
-        ("Itd. omówimy później.", "I tak dalej omówimy później."),
-        ("Wymieniamy itd. elementy.", "Wymieniamy i tak dalej elementy."),
-        ("Itp. można wymieniać.", "I tym podobne można wymieniać."),
-        ("Dodaj owoce itp. produkty.", "Dodaj owoce i tym podobne produkty."),
-        ("Tj. właściwy wynik.", "To jest właściwy wynik."),
-        ("Wynik, tj. odpowiedź.", "Wynik, to jest odpowiedź."),
-        ("Ok. stu osób przyszło.", "Około stu osób przyszło."),
-        ("Było ok. stu osób.", "Było około stu osób."),
-        ("Zł to polska waluta.", "Złotych to polska waluta."),
-        ("Cena w zł wzrosła.", "Cena w złotych wzrosła."),
-    ],
-)
-def test_normalize_polish_abbreviations(source: str, expected: str) -> None:
-    assert normalize(source) == expected
-
-
-@pytest.mark.parametrize(
     "text",
     [
+        "Np. to działa.",
+        "To tzn. działa.",
+        "M.in. to działa.",
+        "Wymieniamy itd. elementy.",
+        "Dodaj owoce itp. produkty.",
+        "Wynik, tj. odpowiedź.",
+        "Było ok. stu osób.",
+        "Cena w zł wzrosła.",
         "Rozdział pozostaje bez zmian.",
     ],
 )
-def test_normalize_does_not_expand_abbreviation_lookalikes(text: str) -> None:
+def test_normalize_preserves_polish_abbreviations(text: str) -> None:
     assert normalize(text) == text
 
 
@@ -116,11 +99,11 @@ def test_normalize_is_idempotent(text: str) -> None:
     [
         (
             "\nNp.  Jan\tma konto!!!\n\n\n\nNapisz do user@example.com??  To itd. działa.\n",
-            "Na przykład Jan ma konto!\n\nNapisz do user@example.com? To i tak dalej działa.",
+            "Np. Jan ma konto!\n\nNapisz do user@example.com? To itd. działa.",
         ),
         (
             "Koszt to  20 zł.... Sprawdź [cennik](www.example.com)\nTzn.  zapłać ok.  jutra!!!",
-            "Koszt to 20 złotych… Sprawdź cennik\nTo znaczy zapłać około jutra!",
+            "Koszt to 20 zł… Sprawdź cennik\nTzn. zapłać ok. jutra!",
         ),
     ],
 )
