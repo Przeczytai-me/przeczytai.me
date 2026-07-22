@@ -8,7 +8,7 @@ from app.config import Settings, get_settings
 from app.errors import ApiException
 from app.models import Reading, ReadingCreateRequest, ReadingListResponse
 from app.repositories.readings import ProcessingStartError, ReadingRepository
-from app.storage import FileStorage, StorageError
+from app.storage import FileStorage, StorageError, StorageObjectNotFoundError
 from app.tts import (
     TtsInputTooLargeError,
     TtsProviderUnavailableError,
@@ -223,4 +223,28 @@ async def download_corrected_text(
         content=corrected_text,
         media_type="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="{reading_id}.md"'},
+    )
+
+
+@router.get("/{reading_id}/original-text")
+async def download_original_text(
+    reading_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: ReadingRepository = Depends(get_reading_repository),
+    storage: FileStorage = Depends(get_file_storage),
+) -> Response:
+    item = _get_user_reading(user.user_id, reading_id, repo)
+    original_text_key = str(item["original_text_key"])
+    try:
+        original_text = storage.get_text(original_text_key)
+    except StorageObjectNotFoundError as exc:
+        raise ApiException("not_found", "Original text not found", 404) from exc
+    except StorageError as exc:
+        raise ApiException("storage_error", "Failed to load original text", 500) from exc
+    extension = Path(original_text_key).suffix or ".txt"
+    media_type = "text/markdown" if extension == ".md" else "text/plain"
+    return Response(
+        content=original_text,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{reading_id}{extension}"'},
     )
