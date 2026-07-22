@@ -10,6 +10,7 @@ from app.tts import resolve_tts_selection, synthesize_to_file
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 TESTED_ASSETS_DIR = BACKEND_DIR.parent / "tested_assets"
+TEST_READ = "Jestem np. piekielnie sfrustrowany."
 
 
 @pytest.mark.skipif(
@@ -25,7 +26,7 @@ def test_openai_tts_generates_mp3() -> None:
 
     asyncio.run(
         synthesize_to_file(
-            "Ala ma kota.",
+            TEST_READ,
             str(output_path),
             selection,
             settings,

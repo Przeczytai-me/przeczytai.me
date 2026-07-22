@@ -3,8 +3,12 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from app.audio import merge_mp3_files
 from app.config import Settings, get_settings
+from app.models import ReadingStatus
+from app.normalization import RULE_BASED_NORMALIZATION_VERSION, ai_normalize, normalize
 from app.repositories.readings import ReadingRepository
+from app.splitting import split_text
 from app.storage import FileStorage
 from app.tts import (
     ensure_tts_provider_available,
@@ -35,19 +39,41 @@ async def process_reading(
     owner_user_id = str(event["owner_user_id"])
     original_text_key = str(event["original_text_key"])
     selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
-    recording_path: Path | None = None
+    current_stage = ReadingStatus.NORMALIZING
 
     existing = repo.get(owner_user_id, reading_id)
-    if existing and existing.get("status") in TERMINAL_READING_STATUSES:
-        return {"status": str(existing["status"])}
-
     try:
+        if existing and existing.get("status") in TERMINAL_READING_STATUSES:
+            return {"status": str(existing["status"])}
+
         ensure_tts_provider_available(selection, settings)
         original_text = storage.get_text(original_text_key)
         provider = validate_tts_input(original_text, selection)
+        repo.set_status(owner_user_id, reading_id, current_stage)
+        try:
+            corrected = normalize(original_text)
+            normalization_status = RULE_BASED_NORMALIZATION_VERSION
+        except Exception:
+            logger.exception(
+                "text normalization failed",
+                extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
+            )
+            corrected = original_text
+            normalization_status = "failed"
+
+        if settings.ai_normalization_enabled and normalization_status != "failed":
+            try:
+                corrected = await ai_normalize(corrected)
+            except Exception:
+                logger.exception(
+                    "AI text normalization failed",
+                    extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
+                )
+
         corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id)
         recording_key = storage.recording_key(owner_user_id, reading_id, provider.output_extension)
         recording_path = Path("/tmp") / f"{reading_id}.{provider.output_extension}"
+        chunks = split_text(corrected, settings.max_chunk_chars)
 
         logger.info(
             "processing reading",
@@ -59,16 +85,31 @@ async def process_reading(
             },
         )
 
-        storage.put_text(corrected_text_key, original_text, "text/markdown; charset=utf-8")
-        await synthesize(original_text, str(recording_path), selection, settings)
+        storage.put_text(corrected_text_key, corrected, "text/markdown; charset=utf-8")
+        chunk_paths = [
+            Path("/tmp") / f"{reading_id}-{chunk.index:04d}.mp3" for chunk in chunks
+        ]
+        current_stage = ReadingStatus.GENERATING_AUDIO
+        repo.set_status(owner_user_id, reading_id, current_stage)
+        for chunk, chunk_path in zip(chunks, chunk_paths, strict=True):
+            await synthesize(chunk.text, str(chunk_path), selection, settings)
+        current_stage = ReadingStatus.MERGING_AUDIO
+        repo.set_status(owner_user_id, reading_id, current_stage)
+        merge_mp3_files(chunk_paths, recording_path)
         storage.put_bytes(recording_key, recording_path.read_bytes(), provider.content_type)
 
+        metadata = {
+            **tts_metadata(selection),
+            "normalization": normalization_status,
+            "chunks": len(chunks),
+            "merge": "byte-concat-v1",
+        }
         repo.mark_completed(
             owner_user_id,
             reading_id,
             corrected_text_key,
             recording_key,
-            tts_metadata(selection),
+            metadata,
         )
         return {"status": "completed"}
     except Exception as exc:
@@ -81,16 +122,21 @@ async def process_reading(
             },
         )
         try:
-            repo.mark_failed(owner_user_id, reading_id, {"processing_error": type(exc).__name__})
+            repo.set_status(
+                owner_user_id,
+                reading_id,
+                ReadingStatus.FAILED,
+                {"failed_stage": current_stage.value, "error": str(exc)[:500]},
+            )
         except Exception:
             logger.exception(
                 "failed to mark reading failed",
                 extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
             )
-        return {"status": "failed"}
+        raise
     finally:
-        if recording_path:
-            recording_path.unlink(missing_ok=True)
+        for temporary_path in Path("/tmp").glob(f"{reading_id}*"):
+            temporary_path.unlink(missing_ok=True)
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, str]:

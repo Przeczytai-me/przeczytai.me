@@ -5,6 +5,8 @@ import pytest
 
 from helpers import create_reading, wait_for_completed
 
+TEST_READ = "Jestem np. piekielnie sfrustrowany."
+
 
 @pytest.mark.skipif(
     os.getenv("RUN_OPENAI_CLOUD_TTS_TESTS") != "1",
@@ -13,7 +15,7 @@ from helpers import create_reading, wait_for_completed
 def test_openai_tts_cloud_processing(api_client: httpx.Client) -> None:
     created = create_reading(
         api_client,
-        "Ala ma kota.",
+        TEST_READ,
         vendor="openai",
         voice="coral",
     )

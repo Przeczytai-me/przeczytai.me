@@ -33,6 +33,16 @@ variable "max_text_chars" {
   default = 100000
 }
 
+variable "max_chunk_chars" {
+  type    = number
+  default = 3000
+}
+
+variable "ai_normalization_enabled" {
+  type    = bool
+  default = false
+}
+
 variable "api_lambda_timeout_seconds" {
   type    = number
   default = 20

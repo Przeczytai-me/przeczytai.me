@@ -6,6 +6,9 @@ locals {
 
 resource "null_resource" "package" {
   triggers = {
+    # The build directory is local to an ephemeral CI runner and is not stored
+    # with remote Terraform state, so the package must be rebuilt on each apply.
+    always_run     = timestamp()
     app_hash       = sha256(join("", [for file in local.app_files : filesha256("${var.backend_path}/app/${file}")]))
     pyproject_hash = filesha256("${var.backend_path}/pyproject.toml")
     builder        = "${local.lambda_build_image}-${local.build_platform}-v1"

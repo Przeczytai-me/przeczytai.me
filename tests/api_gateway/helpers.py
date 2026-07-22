@@ -47,8 +47,11 @@ def wait_for_completed(
         status = last_payload["status"]
         if status == "completed":
             return last_payload
-        if status == "failed_to_start":
-            pytest.fail(f"Reading processing failed to start: {last_payload}")
+        if status in {"failed", "failed_to_start"}:
+            pytest.fail(
+                f"Reading processing failed with status {status}: "
+                f"metadata={last_payload.get('metadata')}"
+            )
         time.sleep(3)
 
     pytest.fail(

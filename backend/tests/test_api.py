@@ -36,7 +36,7 @@ class FakeRepo:
             "recording_key": None,
             "vendor": vendor,
             "voice": voice,
-            "status": "processing",
+            "status": "uploaded",
             "metadata": {},
             "char_count": char_count,
             "created_at": NOW,
@@ -227,7 +227,7 @@ def test_create_and_get_reading() -> None:
     assert created["recording_key"] is None
     assert created["vendor"] == DEFAULT_TTS_VENDOR
     assert created["voice"] == EDGE_TTS_VOICE
-    assert created["status"] == "processing"
+    assert created["status"] == "uploaded"
     assert created["char_count"] == 5
     assert storage.texts[created["original_text_key"]] == "hello"
 
@@ -330,6 +330,20 @@ def test_list_is_user_scoped() -> None:
 
     response = test_client.get("/api/v1/readings").json()
     assert [item["id"] for item in response["items"]] == ["id-1"]
+
+
+def test_list_and_get_pass_new_status_through_unchanged() -> None:
+    """Expose persisted pipeline statuses without constraining the API schema."""
+    repo = FakeRepo()
+    item = add_reading(repo, "user_1", "mine")
+    item["status"] = "generating_audio"
+    test_client, _ = client(repo)
+
+    listed = test_client.get("/api/v1/readings").json()["items"]
+    detail = test_client.get(f"/api/v1/readings/{item['reading_id']}").json()
+
+    assert listed[0]["status"] == "generating_audio"
+    assert detail["status"] == "generating_audio"
 
 
 def test_list_skips_malformed_reading_items() -> None:
