@@ -18,7 +18,7 @@ class FakeRepo:
         self.items: dict[tuple[str, str], dict] = {}
         self.jobs: dict[tuple[str, str], dict] = {}
         self.deleted: list[tuple[str, str]] = []
-        self.started: list[dict[str, str | None]] = []
+        self.started: list[dict[str, object]] = []
 
     def create(
         self,
@@ -38,6 +38,7 @@ class FakeRepo:
             "recording_key": None,
             "vendor": vendor,
             "voice": voice,
+            "abbreviation_readings": abbreviation_readings,
             "status": "uploaded",
             "attempts": 1,
             "metadata": {},
@@ -48,10 +49,16 @@ class FakeRepo:
         self.items[(owner_user_id, reading_id)] = item
         return item
 
-    def increment_attempts(self, owner_user_id: str, reading_id: str) -> int:
+    def begin_retry(self, owner_user_id: str, reading_id: str) -> int:
         item = self.items[(owner_user_id, reading_id)]
+        if item["status"] not in {"completed", "failed", "failed_to_start"}:
+            from app.repositories.readings import RetryConflictError
+
+            raise RetryConflictError
         attempts = int(item.get("attempts", 1)) + 1
         item["attempts"] = attempts
+        item["status"] = "uploaded"
+        item["updated_at"] = NOW
         return attempts
 
     def next_id(self) -> str:

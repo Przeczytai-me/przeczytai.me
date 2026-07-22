@@ -17,21 +17,21 @@ def test_build_timing_map_allocates_chunk_duration_by_sentence_length() -> None:
 
     assert result == {
         "version": 1,
-        "duration": 1.0,
+        "duration_ms": 1000,
         "segments": [
             {
-                "id": "s0001",
+                "id": "segment-1",
                 "text": "Ja.",
-                "start": 0.0,
-                "end": 0.333,
-                "paragraph": 0,
+                "paragraph_index": 0,
+                "start_ms": 0,
+                "end_ms": 333,
             },
             {
-                "id": "s0002",
+                "id": "segment-2",
                 "text": "Kotek.",
-                "start": 0.333,
-                "end": 1.0,
-                "paragraph": 0,
+                "paragraph_index": 0,
+                "start_ms": 333,
+                "end_ms": 1000,
             },
         ],
     }
@@ -48,16 +48,16 @@ def test_build_timing_map_preserves_global_order_and_paragraph_indices() -> None
     segments = result["segments"]
 
     assert result["version"] == 1
-    assert result["duration"] == 6.667
+    assert result["duration_ms"] == 6667
     assert [segment["id"] for segment in segments] == [
-        "s0001",
-        "s0002",
-        "s0003",
-        "s0004",
-        "s0005",
-        "s0006",
+        "segment-1",
+        "segment-2",
+        "segment-3",
+        "segment-4",
+        "segment-5",
+        "segment-6",
     ]
-    assert [segment["paragraph"] for segment in segments] == [0, 0, 1, 2, 3, 3]
+    assert [segment["paragraph_index"] for segment in segments] == [0, 0, 1, 2, 3, 3]
     assert [segment["text"] for segment in segments] == [
         "Pierwszy.",
         "Drugi.",
@@ -66,23 +66,18 @@ def test_build_timing_map_preserves_global_order_and_paragraph_indices() -> None
         "Piąty.",
         "Szósty.",
     ]
-    assert segments[0]["start"] == 0.0
-    assert segments[-1]["end"] == result["duration"]
-    assert segments[2]["end"] == segments[3]["start"] == 2.346
-    assert all(segment["start"] <= segment["end"] for segment in segments)
+    assert segments[0]["start_ms"] == 0
+    assert segments[-1]["end_ms"] == result["duration_ms"]
+    assert segments[2]["end_ms"] == segments[3]["start_ms"] == 2346
+    assert all(segment["start_ms"] <= segment["end_ms"] for segment in segments)
     assert all(
-        current["start"] >= previous["end"]
+        current["start_ms"] == previous["end_ms"]
         for previous, current in zip(segments, segments[1:])
     )
     assert all(
-        isinstance(segment[value], float)
+        isinstance(segment[value], int)
         for segment in segments
-        for value in ("start", "end")
-    )
-    assert all(
-        segment[value] == round(segment[value], 3)
-        for segment in segments
-        for value in ("start", "end")
+        for value in ("start_ms", "end_ms")
     )
 
 
@@ -111,12 +106,12 @@ def test_build_timing_map_uses_polish_abbreviation_sentence_rules() -> None:
 
     assert [segment["text"] for segment in result["segments"]] == expected
     assert [segment["id"] for segment in result["segments"]] == [
-        "s0001",
-        "s0002",
-        "s0003",
+        "segment-1",
+        "segment-2",
+        "segment-3",
     ]
-    assert result["segments"][0]["start"] == 0.0
-    assert result["segments"][-1]["end"] == 9.0
+    assert result["segments"][0]["start_ms"] == 0
+    assert result["segments"][-1]["end_ms"] == 9000
 
 
 def test_mp3_duration_seconds_returns_mutagen_info_length(

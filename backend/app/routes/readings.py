@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse
 from app.auth import CurrentUser, get_current_user
 from app.config import Settings, get_settings
 from app.errors import ApiException
+from app.job_serialization import serialize_job
 from app.models import (
     AbbreviationReading,
     Job,
@@ -16,7 +17,7 @@ from app.models import (
     ReadingStatus,
     TimingMapResponse,
 )
-from app.repositories.readings import ProcessingStartError, ReadingRepository
+from app.repositories.readings import ProcessingStartError, ReadingRepository, RetryConflictError
 from app.storage import FileStorage, StorageError, StorageObjectNotFoundError
 from app.tts import (
     TtsInputTooLargeError,
@@ -193,6 +194,7 @@ async def create_reading(
             job["job_id"],
             ReadingStatus.FAILED_TO_START,
             error="Failed to start reading processing",
+            failed_step="start_processing",
         )
         raise ApiException(
             "processing_start_failed",
@@ -244,7 +246,7 @@ async def get_timing_map(
         raise ApiException("storage_error", "Failed to load timing map", 500) from exc
     return TimingMapResponse(
         reading_id=reading_id,
-        duration=timing_map["duration"],
+        duration_ms=timing_map["duration_ms"],
         segments=timing_map["segments"],
     )
 
@@ -256,16 +258,16 @@ async def retry_reading(
     repo: ReadingRepository = Depends(get_reading_repository),
 ) -> Job:
     item = _get_user_reading(user.user_id, reading_id, repo)
-    if item["status"] not in TERMINAL_READING_STATUSES:
+    try:
+        attempt = repo.begin_retry(user.user_id, reading_id)
+    except RetryConflictError as exc:
         raise ApiException(
             "conflict",
             "A processing attempt is already active for this reading",
             409,
-        )
+        ) from exc
 
-    attempt = repo.increment_attempts(user.user_id, reading_id)
     job = repo.create_job(user.user_id, reading_id, attempt)
-    repo.set_status(user.user_id, reading_id, ReadingStatus.UPLOADED)
     try:
         repo.start_processing(
             user.user_id,
@@ -274,6 +276,7 @@ async def retry_reading(
             item["vendor"],
             item["voice"],
             job["job_id"],
+            abbreviation_readings=item.get("abbreviation_readings"),
         )
     except ProcessingStartError as exc:
         repo.mark_processing_start_failed(user.user_id, reading_id)
@@ -282,6 +285,7 @@ async def retry_reading(
             job["job_id"],
             ReadingStatus.FAILED_TO_START,
             error="Failed to start reading processing",
+            failed_step="start_processing",
         )
         raise ApiException(
             "processing_start_failed",
@@ -289,9 +293,7 @@ async def retry_reading(
             500,
         ) from exc
 
-    from app.routes.jobs import _job
-
-    return _job(job)
+    return serialize_job(job)
 
 
 @router.delete("/{reading_id}", status_code=status.HTTP_204_NO_CONTENT)

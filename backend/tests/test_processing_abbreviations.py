@@ -1,6 +1,8 @@
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from app.config import Settings
 from app.processing import process_reading
 from app.tts import TtsSelection
@@ -34,17 +36,27 @@ def run_processing(
     )
 
 
-def test_processing_applies_abbreviations_after_normalize_and_before_storage_and_tts() -> None:
-    """Store and synthesize custom expansions applied after regex normalization."""
+@pytest.mark.parametrize(
+    ("original_text", "abbreviation", "read_as", "built_in_expansion"),
+    [
+        ("Np. Ala ma kota.", "Np.", "en pe", "Na przykład"),
+        ("To m.in. działa.", "m.in.", "em in", "między innymi"),
+    ],
+)
+def test_processing_custom_pairs_override_builtin_abbreviation_expansion(
+    original_text: str,
+    abbreviation: str,
+    read_as: str,
+    built_in_expansion: str,
+) -> None:
+    """Apply a custom pair to original text before built-in normalization runs."""
     original_key = "users/user-1/readings/job-1/original.txt"
-    original_text = "Np. jadę PKP."
     event = {
         "reading_id": "job-1",
         "owner_user_id": "user-1",
         "original_text_key": original_key,
         "abbreviation_readings": [
-            {"abbreviation": "Na przykład", "read_as": "Przykładowo"},
-            {"abbreviation": "PKP", "read_as": "Pe Ka Pe"},
+            {"abbreviation": abbreviation, "read_as": read_as},
         ],
     }
     storage = FakeStorage()
@@ -55,16 +67,44 @@ def test_processing_applies_abbreviations_after_normalize_and_before_storage_and
     result = run_processing(event, storage, repo, synthesized_texts)
 
     corrected_key = storage.corrected_text_key("user-1", "job-1")
-    expected = "Przykładowo jadę Pe Ka Pe."
+    corrected = storage.texts[corrected_key]
     assert result == {"status": "completed"}
     assert storage.texts[original_key] == original_text
-    assert storage.texts[corrected_key] == expected
-    assert synthesized_texts == [expected]
+    assert read_as in corrected
+    assert built_in_expansion not in corrected
+    assert synthesized_texts == [corrected]
 
 
-def test_processing_applies_abbreviations_after_ai_normalize(monkeypatch) -> None:
-    """Apply custom expansions to text returned by the optional AI normalization pass."""
+def test_processing_custom_pair_for_non_builtin_abbreviation_still_works() -> None:
+    """Apply custom pairs even when normalization has no built-in rule for them."""
+    original_key = "users/user-1/readings/job-1/original.txt"
+    event = {
+        "reading_id": "job-1",
+        "owner_user_id": "user-1",
+        "original_text_key": original_key,
+        "abbreviation_readings": [{"abbreviation": "PKP", "read_as": "Pe Ka Pe"}],
+    }
+    storage = FakeStorage()
+    storage.texts[original_key] = "Jadę PKP."
+    repo = FakeRepo()
+    synthesized_texts: list[str] = []
+
+    result = run_processing(event, storage, repo, synthesized_texts)
+
+    corrected_key = storage.corrected_text_key("user-1", "job-1")
+    assert result == {"status": "completed"}
+    assert storage.texts[corrected_key] == "Jadę Pe Ka Pe."
+    assert synthesized_texts == ["Jadę Pe Ka Pe."]
+
+
+def test_processing_applies_pairs_before_optional_ai_normalize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pass custom-expanded and regex-normalized text into optional AI normalization."""
+    ai_inputs: list[str] = []
+
     async def add_abbreviation(text: str) -> str:
+        ai_inputs.append(text)
         return f"{text} PKP."
 
     monkeypatch.setattr("app.processing.ai_normalize", add_abbreviation)
@@ -73,10 +113,12 @@ def test_processing_applies_abbreviations_after_ai_normalize(monkeypatch) -> Non
         "owner_user_id": "user-1",
         "original_text_key": "users/user-1/readings/job-1/original.txt",
         "abbreviation_readings": [
+            {"abbreviation": "Np.", "read_as": "en pe"},
             {"abbreviation": "PKP", "read_as": "Pe Ka Pe"},
         ],
     }
     storage = FakeStorage()
+    storage.texts[event["original_text_key"]] = "Np. Ala ma kota."
     repo = FakeRepo()
     synthesized_texts: list[str] = []
     settings = Settings(
@@ -88,8 +130,9 @@ def test_processing_applies_abbreviations_after_ai_normalize(monkeypatch) -> Non
     result = run_processing(event, storage, repo, synthesized_texts, settings)
 
     corrected_key = storage.corrected_text_key("user-1", "job-1")
-    expected = "Ala ma kota. Pe Ka Pe."
+    expected = "en pe Ala ma kota. PKP."
     assert result == {"status": "completed"}
+    assert ai_inputs == ["en pe Ala ma kota."]
     assert storage.texts[corrected_key] == expected
     assert synthesized_texts == [expected]
 
@@ -97,7 +140,7 @@ def test_processing_applies_abbreviations_after_ai_normalize(monkeypatch) -> Non
 def test_processing_without_abbreviation_key_preserves_legacy_behavior() -> None:
     """Leave corrected and synthesized text unchanged for a legacy event."""
     original_key = "users/user-1/readings/job-1/original.txt"
-    original_text = "Kod PKP pozostaje."
+    original_text = "Np. Kod PKP pozostaje."
     event = {
         "reading_id": "job-1",
         "owner_user_id": "user-1",
@@ -111,7 +154,8 @@ def test_processing_without_abbreviation_key_preserves_legacy_behavior() -> None
     result = run_processing(event, storage, repo, synthesized_texts)
 
     corrected_key = storage.corrected_text_key("user-1", "job-1")
+    expected = "Na przykład Kod PKP pozostaje."
     assert result == {"status": "completed"}
     assert storage.texts[original_key] == original_text
-    assert storage.texts[corrected_key] == original_text
-    assert synthesized_texts == [original_text]
+    assert storage.texts[corrected_key] == expected
+    assert synthesized_texts == [expected]

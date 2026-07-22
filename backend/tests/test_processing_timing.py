@@ -204,10 +204,18 @@ def test_processing_persists_timing_map_and_completes_with_its_key(
     assert result == {"status": "completed"}
     assert storage.content_types[timing_key] == "application/json"
     assert timing["version"] == 1
-    assert timing["duration"] == 6.25
+    assert timing["duration_ms"] == 6250
     assert [segment["text"] for segment in timing["segments"]] == expected_sentences
-    assert timing["segments"][0]["start"] == 0.0
-    assert timing["segments"][-1]["end"] == 6.25
+    assert timing["segments"][0]["start_ms"] == 0
+    assert timing["segments"][-1]["end_ms"] == 6250
+    assert [segment["id"] for segment in timing["segments"]] == [
+        f"segment-{index}" for index in range(1, len(timing["segments"]) + 1)
+    ]
+    assert all(
+        isinstance(segment[field], int)
+        for segment in timing["segments"]
+        for field in ("paragraph_index", "start_ms", "end_ms")
+    )
     assert [path.name for path in duration_paths] == [
         "reading-1-0000.mp3",
         "reading-1-0001.mp3",

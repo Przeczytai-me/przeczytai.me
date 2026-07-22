@@ -147,15 +147,21 @@ class UserSettingsUpdate(BaseModel):
 class TimingSegment(BaseModel):
     id: str
     text: str
-    start: float
-    end: float
-    paragraph: int
+    paragraph_index: int
+    start_ms: int
+    end_ms: int
 
 
 class TimingMapResponse(BaseModel):
     reading_id: str
-    duration: float
+    duration_ms: int
     segments: list[TimingSegment]
+
+
+class JobError(BaseModel):
+    code: str
+    message: str
+    step: str
 
 
 class Job(BaseModel):
@@ -163,11 +169,9 @@ class Job(BaseModel):
     reading_id: str
     attempt: int
     status: str
-    state: str
-    step_message: str
     progress: int | None = None
-    error: str | None = None
-    failed_step: str | None = None
+    current_step: str
+    error: JobError | None = None
     created_at: str
     updated_at: str
 
