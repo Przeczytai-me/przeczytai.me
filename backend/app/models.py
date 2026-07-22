@@ -94,6 +94,16 @@ class UserSettings(BaseModel):
     abbreviation_readings: list[AbbreviationReading]
 
 
+class UserSettingsUpdate(BaseModel):
+    tts_vendor: str | None = None
+    tts_voice: str | None = None
+    pronunciation_style: str | None = None
+    playback_speed: float | None = Field(default=None, strict=True)
+    sentence_highlighting: bool | None = Field(default=None, strict=True)
+    export_format: str | None = None
+    abbreviation_readings: list[AbbreviationReading] | None = None
+
+
 class UserSettingsResponse(BaseModel):
     settings: UserSettings
     defaults: UserSettings
