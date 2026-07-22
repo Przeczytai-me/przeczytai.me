@@ -37,14 +37,28 @@ def test_normalize_punctuation(source: str, expected: str) -> None:
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
-        ("Odwiedź https://example.com teraz", "Odwiedź link teraz"),
-        ("Odwiedź www.example.com teraz", "Odwiedź link teraz"),
-        ("Napisz do user@example.com dzisiaj", "Napisz do link dzisiaj"),
-        ("To zwykłe zdanie.", "To zwykłe zdanie."),
-        ("Kod @home pozostaje.", "Kod @home pozostaje."),
+        ("Odwiedź https://example.com teraz", "Odwiedź https://example.com teraz"),
+        ("Odwiedź www.example.com teraz", "Odwiedź www.example.com teraz"),
+        ("Napisz do user@example.com dzisiaj", "Napisz do user@example.com dzisiaj"),
     ],
 )
-def test_normalize_bare_links(source: str, expected: str) -> None:
+def test_normalize_preserves_links_embedded_in_plain_text(source: str, expected: str) -> None:
+    assert normalize(source) == expected
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("Przeczytaj [dokumentację](https://example.com/docs).", "Przeczytaj dokumentację."),
+        ("Sprawdź [nasz serwis](www.example.com).", "Sprawdź nasz serwis."),
+        (
+            '[opis wersji](https://example.com/releases/v2 "Wydanie drugie")',
+            "opis wersji",
+        ),
+        ("Zobacz [sekcję](../docs/start.md).", "Zobacz sekcję."),
+    ],
+)
+def test_normalize_markdown_links_keeps_only_visible_text(source: str, expected: str) -> None:
     assert normalize(source) == expected
 
 
@@ -86,7 +100,7 @@ def test_normalize_does_not_expand_abbreviation_lookalikes(text: str) -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "  Np.  sprawdź https://example.com!!!\n\n\nPotem napisz do user@example.com??  ",
+        "  Np.  sprawdź [stronę](https://example.com)!!!\n\n\nPotem napisz do user@example.com??  ",
         "Koszt to 20 zł..... Tzn.  dużo.",
         "Czysty tekst.\nDrugi wiersz?",
     ],
@@ -102,11 +116,11 @@ def test_normalize_is_idempotent(text: str) -> None:
     [
         (
             "\nNp.  Jan\tma konto!!!\n\n\n\nNapisz do user@example.com??  To itd. działa.\n",
-            "Na przykład Jan ma konto!\n\nNapisz do link? To i tak dalej działa.",
+            "Na przykład Jan ma konto!\n\nNapisz do user@example.com? To i tak dalej działa.",
         ),
         (
-            "Koszt to  20 zł.... Sprawdź www.example.com\nTzn.  zapłać ok.  jutra!!!",
-            "Koszt to 20 złotych… Sprawdź link\nTo znaczy zapłać około jutra!",
+            "Koszt to  20 zł.... Sprawdź [cennik](www.example.com)\nTzn.  zapłać ok.  jutra!!!",
+            "Koszt to 20 złotych… Sprawdź cennik\nTo znaczy zapłać około jutra!",
         ),
     ],
 )
@@ -154,8 +168,8 @@ def test_normalize_quotes_and_dashes_is_idempotent(text: str) -> None:
     assert normalize(normalized) == normalized
 
 
-def test_normalize_url_preserves_trailing_polish_closing_quote() -> None:
-    assert normalize("„Zobacz https://example.com”") == '"Zobacz link"'
+def test_normalize_plain_url_preserves_trailing_polish_closing_quote() -> None:
+    assert normalize("„Zobacz https://example.com”") == '"Zobacz https://example.com"'
 
 
 @pytest.mark.parametrize(

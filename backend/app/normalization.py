@@ -5,10 +5,9 @@ import re
 RULE_BASED_NORMALIZATION_VERSION = "regex-v1"
 
 
-_URL_RE = re.compile(r"\b(?:https?://|www\.)[^\s<>()\[\]{}\"'„”“«»‚‘’]+", re.IGNORECASE)
-_EMAIL_RE = re.compile(
-    r"(?<![\w.+-])[\w.+-]+@(?:[a-z0-9-]+\.)+[a-z]{2,}(?![\w-])",
-    re.IGNORECASE,
+_MARKDOWN_LINK_RE = re.compile(
+    r"(?<!!)\[([^\]\n]+)\]\(\s*(?:[^()\s]+|\([^()\s]*\))+"
+    r"(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\)"
 )
 _YEAR_ABBREVIATION_RE = re.compile(r"(?<!\w)(\d+)[ \t]*r\.(?!\w)", re.IGNORECASE)
 _PUNCTUATION_TRANSLATION = str.maketrans(
@@ -52,15 +51,8 @@ def _normalize_punctuation(text: str) -> str:
     return text.translate(_PUNCTUATION_TRANSLATION)
 
 
-def _replace_url(match: re.Match[str]) -> str:
-    value = match.group()
-    url = value.rstrip(".,!?;:…")
-    return f"link{value[len(url):]}"
-
-
 def _normalize_links(text: str) -> str:
-    text = _URL_RE.sub(_replace_url, text)
-    return _EMAIL_RE.sub("link", text)
+    return _MARKDOWN_LINK_RE.sub(r"\1", text)
 
 
 def _expand_abbreviation(match: re.Match[str], replacement: str) -> str:
