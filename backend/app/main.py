@@ -9,12 +9,14 @@ from mangum import Mangum
 from app.errors import ApiException, api_exception_handler, validation_exception_handler
 from app.routes.health import router as health_router
 from app.routes.readings import router as readings_router
+from app.routes.tts_options import router as tts_options_router
 
 app = FastAPI(title="przeczytai.me API", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_exception_handler(ApiException, api_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.include_router(health_router)
 app.include_router(readings_router)
+app.include_router(tts_options_router)
 
 _mangum_handler: Mangum | None = None
 

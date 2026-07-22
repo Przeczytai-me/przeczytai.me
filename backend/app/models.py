@@ -45,3 +45,24 @@ class Reading(BaseModel):
 class ReadingListResponse(BaseModel):
     items: list[Reading]
     next_cursor: str | None = None
+
+
+class TtsVoiceOption(BaseModel):
+    id: str
+    label: str
+    provider_voice: str
+    language: str | None
+    preview_url: str | None
+
+
+class TtsVendorOptions(BaseModel):
+    id: str
+    label: str
+    model: str | None
+    default_voice: str
+    voices: list[TtsVoiceOption]
+
+
+class TtsOptionsResponse(BaseModel):
+    default_vendor: str
+    vendors: list[TtsVendorOptions]
