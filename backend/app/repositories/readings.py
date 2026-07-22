@@ -52,7 +52,7 @@ class ReadingRepository:
             "recording_key": None,
             "vendor": vendor,
             "voice": voice,
-            "status": ReadingStatus.UPLOADED.value,
+            "status": ReadingStatus.UPLOADED,
             "metadata": {},
             "char_count": char_count,
             "created_at": now,
@@ -122,7 +122,7 @@ class ReadingRepository:
 
         names = {"#status": "status"}
         values: dict[str, object] = {
-            ":status": str(status),
+            ":status": status,
             ":updated_at": _now(),
         }
         updates = ["#status = :status", "updated_at = :updated_at"]
@@ -157,7 +157,7 @@ class ReadingRepository:
             "updated_at = :updated_at",
             {"#status": "status"},
             {
-                ":status": str(ReadingStatus.COMPLETED),
+                ":status": ReadingStatus.COMPLETED,
                 ":corrected_text_key": corrected_text_key,
                 ":recording_key": recording_key,
                 ":metadata": metadata,

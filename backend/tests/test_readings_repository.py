@@ -3,6 +3,7 @@ from collections.abc import Callable
 import pytest
 from botocore.exceptions import ClientError
 
+from app.models import ReadingStatus
 from app.repositories.readings import ReadingRepository
 
 
@@ -19,12 +20,32 @@ class FakeTable:
                 "UpdateItem",
             )
 
+    def put_item(self, **kwargs: object) -> None:
+        self.calls.append(kwargs)
+
 
 def make_repository(table: FakeTable) -> ReadingRepository:
     repository = object.__new__(ReadingRepository)
     repository.table = table
     repository.processor_function_name = None
     return repository
+
+
+def test_create_stores_str_enum_status_directly() -> None:
+    table = FakeTable()
+    repository = make_repository(table)
+
+    item = repository.create(
+        "owner-1",
+        "reading-1",
+        "original.txt",
+        42,
+        "edge-tts",
+        "pl-PL-ZofiaNeural",
+    )
+
+    assert item["status"] is ReadingStatus.UPLOADED
+    assert table.calls[0]["Item"] is item
 
 
 def test_mark_completed_updates_all_fields_atomically() -> None:
