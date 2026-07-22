@@ -3,6 +3,17 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 
+DEFAULT_USER_SETTINGS = {
+    "tts_vendor": "edge-tts",
+    "tts_voice": "Zofia",
+    "pronunciation_style": None,
+    "playback_speed": 1.0,
+    "sentence_highlighting": True,
+    "export_format": "mp3",
+    "abbreviation_readings": [],
+}
+
+
 class ReadingStatus(StrEnum):
     UPLOADED = "uploaded"
     NORMALIZING = "normalizing"
@@ -66,3 +77,23 @@ class TtsVendorOptions(BaseModel):
 class TtsOptionsResponse(BaseModel):
     default_vendor: str
     vendors: list[TtsVendorOptions]
+
+
+class AbbreviationReading(BaseModel):
+    abbreviation: str
+    read_as: str
+
+
+class UserSettings(BaseModel):
+    tts_vendor: str
+    tts_voice: str
+    pronunciation_style: str | None
+    playback_speed: float
+    sentence_highlighting: bool
+    export_format: str
+    abbreviation_readings: list[AbbreviationReading]
+
+
+class UserSettingsResponse(BaseModel):
+    settings: UserSettings
+    defaults: UserSettings
