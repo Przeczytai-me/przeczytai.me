@@ -86,6 +86,17 @@ def normalize(text: str) -> str:
     return text
 
 
+def apply_abbreviation_readings(text: str, pairs: list[dict] | None) -> str:
+    if not pairs:
+        return text
+    for pair in pairs:
+        abbreviation = pair["abbreviation"].strip()
+        read_as = pair["read_as"].strip()
+        pattern = re.compile(rf"(?<!\w){re.escape(abbreviation)}(?!\w)")
+        text = pattern.sub(lambda _: read_as, text)
+    return text
+
+
 async def ai_normalize(text: str) -> str:
     """Placeholder for the future Claude API (anthropic SDK) normalization pass.
 

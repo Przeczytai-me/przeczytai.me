@@ -6,7 +6,7 @@ from typing import Any
 from app.audio import merge_mp3_files
 from app.config import Settings, get_settings
 from app.models import ReadingStatus
-from app.normalization import ai_normalize, normalize
+from app.normalization import ai_normalize, apply_abbreviation_readings, normalize
 from app.repositories.readings import ReadingRepository
 from app.splitting import split_text
 from app.storage import FileStorage
@@ -38,6 +38,7 @@ async def process_reading(
     reading_id = str(event["reading_id"])
     owner_user_id = str(event["owner_user_id"])
     original_text_key = str(event["original_text_key"])
+    pairs = event.get("abbreviation_readings")
     selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
     current_stage = ReadingStatus.NORMALIZING
 
@@ -70,6 +71,7 @@ async def process_reading(
                     extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
                 )
 
+        corrected = apply_abbreviation_readings(corrected, pairs)
         corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id)
         recording_key = storage.recording_key(owner_user_id, reading_id, provider.output_extension)
         recording_path = Path("/tmp") / f"{reading_id}.{provider.output_extension}"

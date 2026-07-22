@@ -27,6 +27,7 @@ class FakeRepo:
         char_count: int,
         vendor: str | None,
         voice: str | None,
+        abbreviation_readings: list[dict[str, str]] | None = None,
     ) -> dict:
         item = {
             "reading_id": reading_id,
@@ -55,6 +56,7 @@ class FakeRepo:
         original_text_key: str,
         vendor: str | None,
         voice: str | None,
+        abbreviation_readings: list[dict[str, str]] | None = None,
     ) -> None:
         self.started.append(
             {
@@ -110,8 +112,9 @@ class FailingProcessingRepo(FakeRepo):
         original_text_key: str,
         vendor: str | None,
         voice: str | None,
+        abbreviation_readings: list[dict[str, str]] | None = None,
     ) -> None:
-        del owner_user_id, reading_id, original_text_key, vendor, voice
+        del owner_user_id, reading_id, original_text_key, vendor, voice, abbreviation_readings
         raise ProcessingStartError
 
 
