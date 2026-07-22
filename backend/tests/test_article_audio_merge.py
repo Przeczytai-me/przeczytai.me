@@ -1,6 +1,5 @@
-"""Opt-in listening test for TTS chunk boundaries in a full article."""
+"""Opt-in listening test for TTS chunk boundaries in a full article.
 
-"""
 How to run this test:
 Edge:
     RUN_ARTICLE_AUDIO_MERGE_TEST=1 .venv/bin/pytest -s tests/test_article_audio_merge.py
