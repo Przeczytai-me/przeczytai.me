@@ -1,15 +1,17 @@
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any
 
-from app.audio import merge_mp3_files
+from app.audio import merge_mp3_files, mp3_duration_seconds
 from app.config import Settings, get_settings
 from app.models import ReadingStatus
 from app.normalization import RULE_BASED_NORMALIZATION_VERSION, apply_abbreviation_readings, ai_normalize, normalize
 from app.repositories.readings import ReadingRepository
 from app.splitting import split_text
 from app.storage import FileStorage
+from app.timing import build_timing_map
 from app.tts import (
     ensure_tts_provider_available,
     resolve_tts_selection,
@@ -95,6 +97,7 @@ async def process_reading(
             provider.output_extension,
             job_id=job_id,
         )
+        timing_map_key = storage.timing_map_key(owner_user_id, reading_id, job_id=job_id)
         recording_path = Path("/tmp") / f"{reading_id}.{provider.output_extension}"
         chunks = split_text(corrected, settings.max_chunk_chars)
 
@@ -118,6 +121,9 @@ async def process_reading(
             repo.set_job_status(owner_user_id, str(job_id), current_stage)
         for chunk, chunk_path in zip(chunks, chunk_paths, strict=True):
             await synthesize(chunk.text, str(chunk_path), selection, settings)
+        durations = [mp3_duration_seconds(chunk_path) for chunk_path in chunk_paths]
+        timing_map = build_timing_map(chunks, durations)
+        storage.put_text(timing_map_key, json.dumps(timing_map), "application/json")
         current_stage = ReadingStatus.MERGING_AUDIO
         repo.set_status(owner_user_id, reading_id, current_stage)
         if job_id:
@@ -137,6 +143,7 @@ async def process_reading(
             corrected_text_key,
             recording_key,
             metadata,
+            timing_map_key,
         )
         if job_id:
             repo.set_job_status(owner_user_id, str(job_id), ReadingStatus.COMPLETED)

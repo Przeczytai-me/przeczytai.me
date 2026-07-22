@@ -227,18 +227,21 @@ class ReadingRepository:
         corrected_text_key: str,
         recording_key: str,
         metadata: dict[str, object],
+        timing_map_key: str,
     ) -> None:
         self._update_existing(
             owner_user_id,
             reading_id,
             "SET #status = :status, corrected_text_key = :corrected_text_key, "
-            "recording_key = :recording_key, metadata = :metadata, "
+            "recording_key = :recording_key, timing_map_key = :timing_map_key, "
+            "metadata = :metadata, "
             "updated_at = :updated_at",
             {"#status": "status"},
             {
                 ":status": ReadingStatus.COMPLETED,
                 ":corrected_text_key": corrected_text_key,
                 ":recording_key": recording_key,
+                ":timing_map_key": timing_map_key,
                 ":metadata": metadata,
                 ":updated_at": _now(),
             },

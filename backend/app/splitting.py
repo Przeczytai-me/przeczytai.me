@@ -113,6 +113,10 @@ def _split_sentences(text: str) -> list[str]:
     return [sentence for sentence in sentences if sentence]
 
 
+def split_sentences(text: str) -> list[str]:
+    return _split_sentences(text)
+
+
 def _hard_split(text: str, max_chunk_chars: int) -> list[str]:
     pieces: list[str] = []
     remaining = text.strip()
@@ -155,7 +159,7 @@ def split_text(text: str, max_chunk_chars: int) -> list[Chunk]:
             continue
 
         first_piece = True
-        for sentence in _split_sentences(paragraph):
+        for sentence in split_sentences(paragraph):
             pieces = (
                 [sentence]
                 if len(sentence) <= max_chunk_chars

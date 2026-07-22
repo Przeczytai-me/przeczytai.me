@@ -47,6 +47,7 @@ class RetryRepo(JobsFakeRepo):
         corrected_text_key: str,
         recording_key: str,
         metadata: dict[str, object],
+        timing_map_key: str,
     ) -> None:
         super().mark_completed(
             owner_user_id,
@@ -54,10 +55,12 @@ class RetryRepo(JobsFakeRepo):
             corrected_text_key,
             recording_key,
             metadata,
+            timing_map_key,
         )
         item = self.items[(owner_user_id, reading_id)]
         item["corrected_text_key"] = corrected_text_key
         item["recording_key"] = recording_key
+        item["timing_map_key"] = timing_map_key
 
 
 def processing_settings() -> Settings:

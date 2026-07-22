@@ -150,10 +150,12 @@ class FakeRepo:
         corrected_text_key: str,
         recording_key: str,
         metadata: dict[str, object],
+        timing_map_key: str,
     ) -> None:
         item = self.items[(owner_user_id, reading_id)]
         item["corrected_text_key"] = corrected_text_key
         item["recording_key"] = recording_key
+        item["timing_map_key"] = timing_map_key
         item["metadata"] = metadata
         item["status"] = "completed"
         item["updated_at"] = NOW
@@ -196,6 +198,12 @@ class FakeStorage:
         job_id: str | None = None,
     ) -> str:
         filename = f"recording.{extension}" if job_id is None else f"recording-{job_id}.{extension}"
+        return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
+
+    def timing_map_key(
+        self, owner_user_id: str, reading_id: str, job_id: str | None = None
+    ) -> str:
+        filename = "timing.json" if job_id is None else f"timing-{job_id}.json"
         return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
 
     def put_text(self, key: str, content: str, content_type: str) -> None:
