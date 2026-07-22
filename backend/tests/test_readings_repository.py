@@ -32,7 +32,9 @@ def test_mark_completed_updates_all_fields_atomically() -> None:
     repository = make_repository(table)
     metadata = {"chunks": 2, "processor": "edge-tts"}
 
-    repository.mark_completed("owner-1", "reading-1", "corrected.md", "recording.mp3", metadata)
+    repository.mark_completed(
+        "owner-1", "reading-1", "corrected.md", "recording.mp3", metadata, "timing.json"
+    )
 
     assert len(table.calls) == 1
     request = table.calls[0]
@@ -49,6 +51,7 @@ def test_mark_completed_updates_all_fields_atomically() -> None:
         "status",
         "corrected_text_key",
         "recording_key",
+        "timing_map_key",
         "metadata",
         "updated_at",
     }
@@ -56,6 +59,7 @@ def test_mark_completed_updates_all_fields_atomically() -> None:
     assert "completed" in values.values()
     assert "corrected.md" in values.values()
     assert "recording.mp3" in values.values()
+    assert "timing.json" in values.values()
     assert metadata in values.values()
 
 
@@ -102,7 +106,12 @@ def test_set_status_without_patch_updates_only_status_and_timestamp() -> None:
     "operation",
     [
         lambda repository: repository.mark_completed(
-            "owner-1", "reading-1", "corrected.md", "recording.mp3", {"chunks": 1}
+            "owner-1",
+            "reading-1",
+            "corrected.md",
+            "recording.mp3",
+            {"chunks": 1},
+            "timing.json",
         ),
         lambda repository: repository.set_status(
             "owner-1", "reading-1", "failed", {"error": "provider_failed"}

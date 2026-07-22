@@ -44,6 +44,12 @@ class FakeStorage:
         filename = f"recording.{extension}" if job_id is None else f"recording-{job_id}.{extension}"
         return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
 
+    def timing_map_key(
+        self, owner_user_id: str, reading_id: str, job_id: str | None = None
+    ) -> str:
+        filename = "timing.json" if job_id is None else f"timing-{job_id}.json"
+        return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
+
 
 class FakeRepo:
     def __init__(self) -> None:
@@ -63,12 +69,14 @@ class FakeRepo:
         corrected_text_key: str,
         recording_key: str,
         metadata: dict[str, object],
+        timing_map_key: str,
     ) -> None:
         self.completed = {
             "owner_user_id": owner_user_id,
             "reading_id": reading_id,
             "corrected_text_key": corrected_text_key,
             "recording_key": recording_key,
+            "timing_map_key": timing_map_key,
             "metadata": metadata,
         }
         self.set_status(owner_user_id, reading_id, "completed", metadata)
@@ -124,6 +132,7 @@ def test_processing_generates_same_text_and_recording() -> None:
 
     corrected_text_key = "users/user-1/readings/job-1/corrected.md"
     recording_key = "users/user-1/readings/job-1/recording.mp3"
+    timing_map_key = "users/user-1/readings/job-1/timing.json"
     assert result == {"status": "completed"}
     assert storage.texts[corrected_text_key] == "Ala ma kota."
     assert storage.bytes[recording_key] == b"mp3:edge-tts:pl-PL-ZofiaNeural:Ala ma kota."
@@ -132,6 +141,7 @@ def test_processing_generates_same_text_and_recording() -> None:
         "reading_id": "job-1",
         "corrected_text_key": corrected_text_key,
         "recording_key": recording_key,
+        "timing_map_key": timing_map_key,
         "metadata": {
             "processor": DEFAULT_TTS_VENDOR,
             "voice": EDGE_TTS_VOICE,

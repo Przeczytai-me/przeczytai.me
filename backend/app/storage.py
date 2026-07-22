@@ -44,6 +44,12 @@ class FileStorage:
         )
         return self._key(owner_user_id, reading_id, filename)
 
+    def timing_map_key(
+        self, owner_user_id: str, reading_id: str, job_id: str | None = None
+    ) -> str:
+        filename = "timing.json" if job_id is None else f"timing-{job_id}.json"
+        return self._key(owner_user_id, reading_id, filename)
+
     def put_text(self, key: str, content: str, content_type: str) -> None:
         self.put_bytes(key, content.encode(), content_type)
 

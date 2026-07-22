@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -13,6 +14,7 @@ from app.models import (
     ReadingCreateRequest,
     ReadingListResponse,
     ReadingStatus,
+    TimingMapResponse,
 )
 from app.repositories.readings import ProcessingStartError, ReadingRepository
 from app.storage import FileStorage, StorageError, StorageObjectNotFoundError
@@ -221,6 +223,30 @@ async def get_reading(
     repo: ReadingRepository = Depends(get_reading_repository),
 ) -> Reading:
     return _reading(_get_user_reading(user.user_id, reading_id, repo))
+
+
+@router.get("/{reading_id}/timing-map", response_model=TimingMapResponse)
+async def get_timing_map(
+    reading_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: ReadingRepository = Depends(get_reading_repository),
+    storage: FileStorage = Depends(get_file_storage),
+) -> TimingMapResponse:
+    item = _get_user_reading(user.user_id, reading_id, repo)
+    if item["status"] not in TERMINAL_READING_STATUSES:
+        raise ApiException("timing_map_not_ready", "Timing map is not ready", 409)
+    timing_map_key = item.get("timing_map_key")
+    if not timing_map_key:
+        raise ApiException("timing_map_unavailable", "Timing map is not available", 404)
+    try:
+        timing_map = json.loads(storage.get_text(str(timing_map_key)))
+    except StorageError as exc:
+        raise ApiException("storage_error", "Failed to load timing map", 500) from exc
+    return TimingMapResponse(
+        reading_id=reading_id,
+        duration=timing_map["duration"],
+        segments=timing_map["segments"],
+    )
 
 
 @router.post("/{reading_id}/retry", response_model=Job, status_code=status.HTTP_202_ACCEPTED)

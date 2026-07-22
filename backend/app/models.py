@@ -109,6 +109,21 @@ class UserSettingsResponse(BaseModel):
     settings: UserSettings
     defaults: UserSettings
 
+
+class TimingSegment(BaseModel):
+    id: str
+    text: str
+    start: float
+    end: float
+    paragraph: int
+
+
+class TimingMapResponse(BaseModel):
+    reading_id: str
+    duration: float
+    segments: list[TimingSegment]
+
+
 class Job(BaseModel):
     id: str
     reading_id: str
