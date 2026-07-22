@@ -7,7 +7,12 @@ from typing import Any
 from app.audio import merge_mp3_files, mp3_duration_seconds
 from app.config import Settings, get_settings
 from app.models import ReadingStatus
-from app.normalization import ai_normalize, apply_abbreviation_readings, normalize
+from app.normalization import (
+    RULE_BASED_NORMALIZATION_VERSION,
+    ai_normalize,
+    apply_abbreviation_readings,
+    normalize,
+)
 from app.repositories.readings import ReadingRepository
 from app.splitting import split_text
 from app.storage import FileStorage
@@ -70,7 +75,7 @@ async def process_reading(
         corrected = apply_abbreviation_readings(original_text, pairs)
         try:
             corrected = normalize(corrected)
-            normalization_status = "regex-v1"
+            normalization_status = RULE_BASED_NORMALIZATION_VERSION
         except Exception:
             logger.exception(
                 "text normalization failed",

@@ -1,6 +1,10 @@
 import re
 
 
+# Identifier stored in reading metadata for the current normalization rule set.
+RULE_BASED_NORMALIZATION_VERSION = "rule-based-v1"
+
+
 _URL_RE = re.compile(r"\b(?:https?://|www\.)[^\s<>()\[\]{}\"'„”“«»‚‘’]+", re.IGNORECASE)
 _EMAIL_RE = re.compile(
     r"(?<![\w.+-])[\w.+-]+@(?:[a-z0-9-]+\.)+[a-z]{2,}(?![\w-])",
