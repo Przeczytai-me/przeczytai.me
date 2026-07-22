@@ -86,8 +86,15 @@ async def process_reading(
                 )
 
         corrected = apply_abbreviation_readings(corrected, pairs)
-        corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id)
-        recording_key = storage.recording_key(owner_user_id, reading_id, provider.output_extension)
+        corrected_text_key = storage.corrected_text_key(
+            owner_user_id, reading_id, job_id=job_id
+        )
+        recording_key = storage.recording_key(
+            owner_user_id,
+            reading_id,
+            provider.output_extension,
+            job_id=job_id,
+        )
         recording_path = Path("/tmp") / f"{reading_id}.{provider.output_extension}"
         chunks = split_text(corrected, settings.max_chunk_chars)
 

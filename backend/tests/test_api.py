@@ -39,6 +39,7 @@ class FakeRepo:
             "vendor": vendor,
             "voice": voice,
             "status": "uploaded",
+            "attempts": 1,
             "metadata": {},
             "char_count": char_count,
             "created_at": NOW,
@@ -46,6 +47,12 @@ class FakeRepo:
         }
         self.items[(owner_user_id, reading_id)] = item
         return item
+
+    def increment_attempts(self, owner_user_id: str, reading_id: str) -> int:
+        item = self.items[(owner_user_id, reading_id)]
+        attempts = int(item.get("attempts", 1)) + 1
+        item["attempts"] = attempts
+        return attempts
 
     def next_id(self) -> str:
         return f"id-{len(self.items) + 1}"
@@ -175,11 +182,21 @@ class FakeStorage:
     def original_text_key(self, owner_user_id: str, reading_id: str) -> str:
         return f"users/{owner_user_id}/readings/{reading_id}/original.txt"
 
-    def corrected_text_key(self, owner_user_id: str, reading_id: str) -> str:
-        return f"users/{owner_user_id}/readings/{reading_id}/corrected.md"
+    def corrected_text_key(
+        self, owner_user_id: str, reading_id: str, job_id: str | None = None
+    ) -> str:
+        filename = "corrected.md" if job_id is None else f"corrected-{job_id}.md"
+        return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
 
-    def recording_key(self, owner_user_id: str, reading_id: str) -> str:
-        return f"users/{owner_user_id}/readings/{reading_id}/recording.mp3"
+    def recording_key(
+        self,
+        owner_user_id: str,
+        reading_id: str,
+        extension: str = "mp3",
+        job_id: str | None = None,
+    ) -> str:
+        filename = f"recording.{extension}" if job_id is None else f"recording-{job_id}.{extension}"
+        return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
 
     def put_text(self, key: str, content: str, content_type: str) -> None:
         del content_type
