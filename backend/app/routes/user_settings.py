@@ -5,12 +5,12 @@ from app.config import Settings, get_settings
 from app.errors import ApiException
 from app.models import (
     DEFAULT_USER_SETTINGS,
+    PRONUNCIATION_STYLES,
     UserSettings,
-    UserSettingsResponse,
     UserSettingsUpdate,
 )
 from app.repositories.user_settings import UserSettingsRepository
-from app.tts import TTS_PROVIDERS, get_tts_provider
+from app.routes.tts_options import configured_providers
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 
@@ -21,74 +21,92 @@ def get_user_settings_repository(
     return UserSettingsRepository(settings.readings_table_name)
 
 
-def _response(overrides: dict) -> UserSettingsResponse:
+def _response(overrides: dict) -> UserSettings:
     effective = DEFAULT_USER_SETTINGS | {
         key: value for key, value in overrides.items() if key in DEFAULT_USER_SETTINGS
     }
-    return UserSettingsResponse(
-        settings=UserSettings(**effective),
-        defaults=UserSettings(**DEFAULT_USER_SETTINGS),
-    )
+    if isinstance(effective["exports"], dict):
+        effective["exports"] = DEFAULT_USER_SETTINGS["exports"] | effective["exports"]
+    return UserSettings(**effective)
 
 
 def _validation_error() -> ApiException:
     return ApiException("validation_error", "Invalid request", 422)
 
 
-def _validated_overrides(update: UserSettingsUpdate) -> dict:
-    overrides = update.model_dump(exclude_none=True)
-    if update.tts_vendor is not None and update.tts_vendor not in TTS_PROVIDERS:
+def _validated_settings(update: UserSettingsUpdate, settings: Settings) -> dict:
+    validated = update.model_dump()
+    providers_by_model = {
+        str(provider.model or provider.vendor): provider
+        for provider in configured_providers(settings)
+    }
+    if update.reading_model not in providers_by_model:
         raise _validation_error()
-    if update.tts_voice is not None:
-        voices = get_tts_provider(update.tts_vendor).voices
-        if update.tts_voice not in voices and update.tts_voice not in voices.values():
+    if update.fallback_model is not None and update.fallback_model not in providers_by_model:
+        raise _validation_error()
+    voices = providers_by_model[update.reading_model].voices
+    if update.voice in voices:
+        validated["voice"] = update.voice
+    elif update.voice in voices.values():
+        validated["voice"] = next(
+            voice_id for voice_id, provider_id in voices.items() if provider_id == update.voice
+        )
+    else:
+        raise _validation_error()
+    if update.pronunciation_style not in {style["id"] for style in PRONUNCIATION_STYLES}:
+        raise _validation_error()
+    if not 0.5 <= update.playback_speed <= 2.0:
+        raise _validation_error()
+
+    filename_pattern = update.exports.filename_pattern.strip()
+    if (
+        not filename_pattern
+        or len(filename_pattern) > 120
+        or update.exports.mp3_quality != "standard"
+        or update.exports.text_format not in {"md", "txt"}
+    ):
+        raise _validation_error()
+    validated["exports"]["filename_pattern"] = filename_pattern
+
+    readings = update.custom_abbreviation_readings
+    if len(readings) > 100:
+        raise _validation_error()
+    normalized = []
+    abbreviations = set()
+    for reading in readings:
+        abbreviation = reading.abbreviation.strip()
+        read_as = reading.read_as.strip()
+        normalized_abbreviation = abbreviation.casefold()
+        if (
+            not abbreviation
+            or not read_as
+            or len(abbreviation) > 50
+            or len(read_as) > 200
+            or normalized_abbreviation in abbreviations
+        ):
             raise _validation_error()
-    if update.playback_speed is not None and not 0.5 <= update.playback_speed <= 2.0:
-        raise _validation_error()
-    if update.export_format is not None and update.export_format != "mp3":
-        raise _validation_error()
-    if update.pronunciation_style is not None and len(update.pronunciation_style) > 120:
-        raise _validation_error()
-
-    readings = update.abbreviation_readings
-    if readings is not None:
-        if len(readings) > 100:
-            raise _validation_error()
-        normalized = []
-        abbreviations = set()
-        for reading in readings:
-            abbreviation = reading.abbreviation.strip()
-            read_as = reading.read_as.strip()
-            normalized_abbreviation = abbreviation.casefold()
-            if (
-                not abbreviation
-                or not read_as
-                or len(abbreviation) > 50
-                or len(read_as) > 200
-                or normalized_abbreviation in abbreviations
-            ):
-                raise _validation_error()
-            abbreviations.add(normalized_abbreviation)
-            normalized.append({"abbreviation": abbreviation, "read_as": read_as})
-        overrides["abbreviation_readings"] = normalized
-    return overrides
+        abbreviations.add(normalized_abbreviation)
+        normalized.append({"abbreviation": abbreviation, "read_as": read_as})
+    validated["custom_abbreviation_readings"] = normalized
+    return validated
 
 
-@router.get("", response_model=UserSettingsResponse)
+@router.get("", response_model=UserSettings)
 async def get_user_settings(
     user: CurrentUser = Depends(get_current_user),
     repo: UserSettingsRepository = Depends(get_user_settings_repository),
-) -> UserSettingsResponse:
+) -> UserSettings:
     overrides = repo.get(user.user_id) or {}
     return _response(overrides)
 
 
-@router.put("", response_model=UserSettingsResponse)
+@router.put("", response_model=UserSettings)
 async def put_user_settings(
     update: UserSettingsUpdate,
     user: CurrentUser = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
     repo: UserSettingsRepository = Depends(get_user_settings_repository),
-) -> UserSettingsResponse:
-    overrides = _validated_overrides(update)
-    repo.put(user.user_id, overrides)
-    return _response(overrides)
+) -> UserSettings:
+    validated = _validated_settings(update, settings)
+    updated_at = repo.put(user.user_id, validated)
+    return _response(validated | {"updated_at": updated_at})

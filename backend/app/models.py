@@ -1,17 +1,28 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 DEFAULT_USER_SETTINGS = {
-    "tts_vendor": "edge-tts",
-    "tts_voice": "Zofia",
-    "pronunciation_style": None,
+    "reading_model": "edge-tts",
+    "fallback_model": None,
+    "voice": "Zofia",
+    "pronunciation_style": "natural",
     "playback_speed": 1.0,
     "sentence_highlighting": True,
-    "export_format": "mp3",
-    "abbreviation_readings": [],
+    "custom_abbreviation_readings": [],
+    "exports": {
+        "filename_pattern": "{reading_id}",
+        "mp3_quality": "standard",
+        "text_format": "md",
+    },
+    "updated_at": "1970-01-01T00:00:00Z",
 }
+
+PRONUNCIATION_STYLES = [
+    {"id": "natural", "label": "Naturalny"},
+    {"id": "clear", "label": "Wyraźny"},
+]
 
 
 class ReadingStatus(StrEnum):
@@ -66,48 +77,71 @@ class ReadingListResponse(BaseModel):
 
 class TtsVoiceOption(BaseModel):
     id: str
+    provider_id: str
     label: str
-    provider_voice: str
-    language: str | None
+    language: str
     preview_url: str | None
 
 
-class TtsVendorOptions(BaseModel):
+class TtsVendorOption(BaseModel):
     id: str
     label: str
-    model: str | None
-    default_voice: str
-    voices: list[TtsVoiceOption]
+
+
+class TtsModelOption(BaseModel):
+    id: str
+    vendor_id: str
+    label: str
+
+
+class PronunciationStyleOption(BaseModel):
+    id: str
+    label: str
+
+
+class TtsDefaults(BaseModel):
+    model: str
+    voice: str
+    pronunciation_style: str
 
 
 class TtsOptionsResponse(BaseModel):
-    default_vendor: str
-    vendors: list[TtsVendorOptions]
+    vendors: list[TtsVendorOption]
+    models: list[TtsModelOption]
+    voices: list[TtsVoiceOption]
+    pronunciation_styles: list[PronunciationStyleOption]
+    defaults: TtsDefaults
+
+
+class UserSettingsExports(BaseModel):
+    filename_pattern: str
+    mp3_quality: str
+    text_format: str
 
 
 class UserSettings(BaseModel):
-    tts_vendor: str
-    tts_voice: str
-    pronunciation_style: str | None
+    reading_model: str
+    fallback_model: str | None
+    voice: str
+    pronunciation_style: str
     playback_speed: float
     sentence_highlighting: bool
-    export_format: str
-    abbreviation_readings: list[AbbreviationReading]
+    custom_abbreviation_readings: list[AbbreviationReading]
+    exports: UserSettingsExports
+    updated_at: str
 
 
 class UserSettingsUpdate(BaseModel):
-    tts_vendor: str | None = None
-    tts_voice: str | None = None
-    pronunciation_style: str | None = None
-    playback_speed: float | None = Field(default=None, strict=True)
-    sentence_highlighting: bool | None = Field(default=None, strict=True)
-    export_format: str | None = None
-    abbreviation_readings: list[AbbreviationReading] | None = None
+    model_config = ConfigDict(extra="ignore")
 
-
-class UserSettingsResponse(BaseModel):
-    settings: UserSettings
-    defaults: UserSettings
+    reading_model: str
+    fallback_model: str | None = None
+    voice: str
+    pronunciation_style: str
+    playback_speed: float = Field(strict=True)
+    sentence_highlighting: bool = Field(strict=True)
+    custom_abbreviation_readings: list[AbbreviationReading]
+    exports: UserSettingsExports
 
 
 class TimingSegment(BaseModel):
