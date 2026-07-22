@@ -12,6 +12,10 @@ class StorageConfigurationError(StorageError):
     pass
 
 
+class StorageObjectNotFoundError(StorageError):
+    pass
+
+
 class FileStorage:
     def __init__(self, bucket_name: str | None) -> None:
         self.bucket_name = bucket_name
@@ -48,7 +52,11 @@ class FileStorage:
         try:
             response = self.s3.get_object(Bucket=self.bucket_name, Key=key)
             return response["Body"].read().decode()
-        except (BotoCoreError, ClientError) as exc:
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in {"NoSuchKey", "404"}:
+                raise StorageObjectNotFoundError from exc
+            raise StorageError from exc
+        except BotoCoreError as exc:
             raise StorageError from exc
 
     def download_url(self, key: str, filename: str) -> str:
