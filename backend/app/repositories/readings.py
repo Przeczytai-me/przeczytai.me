@@ -40,6 +40,7 @@ class ReadingRepository:
         char_count: int,
         vendor: str,
         voice: str,
+        abbreviation_readings: list[dict] | None = None,
     ) -> dict:
         now = _now()
         item = {
@@ -52,6 +53,7 @@ class ReadingRepository:
             "recording_key": None,
             "vendor": vendor,
             "voice": voice,
+            "abbreviation_readings": abbreviation_readings,
             "status": ReadingStatus.UPLOADED,
             "metadata": {},
             "char_count": char_count,
@@ -72,6 +74,7 @@ class ReadingRepository:
         original_text_key: str,
         vendor: str,
         voice: str,
+        abbreviation_readings: list[dict] | None = None,
     ) -> None:
         if not self.lambda_client or not self.processor_function_name:
             raise ProcessingStartError
@@ -87,6 +90,7 @@ class ReadingRepository:
                         "original_text_key": original_text_key,
                         "vendor": vendor,
                         "voice": voice,
+                        "abbreviation_readings": abbreviation_readings,
                     }
                 ).encode(),
             )

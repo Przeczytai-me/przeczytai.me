@@ -33,10 +33,16 @@ class ErrorResponse(BaseModel):
     error: ApiError
 
 
+class AbbreviationReading(BaseModel):
+    abbreviation: str
+    read_as: str
+
+
 class ReadingCreateRequest(BaseModel):
     original_text: str
     vendor: str | None = Field(default=None, max_length=120)
     voice: str | None = Field(default=None, max_length=120)
+    abbreviation_readings: list[AbbreviationReading] | None = None
 
 
 class Reading(BaseModel):
@@ -77,11 +83,6 @@ class TtsVendorOptions(BaseModel):
 class TtsOptionsResponse(BaseModel):
     default_vendor: str
     vendors: list[TtsVendorOptions]
-
-
-class AbbreviationReading(BaseModel):
-    abbreviation: str
-    read_as: str
 
 
 class UserSettings(BaseModel):
