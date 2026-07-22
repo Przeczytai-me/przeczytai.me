@@ -17,8 +17,9 @@ import os
 from pathlib import Path
 
 import pytest
+from mutagen.mp3 import MP3
 
-from app.audio import merge_mp3_files, mp3_duration_seconds
+from app.audio import merge_mp3_files
 from app.config import Settings
 from app.normalization import normalize
 from app.splitting import Chunk, split_text
@@ -28,6 +29,10 @@ from app.tts import resolve_tts_selection, synthesize_to_file
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ARTICLE_PATH = Path(__file__).parent / "fixtures" / "article.md"
 OUTPUT_DIR = BACKEND_DIR.parent / "tested_assets" / "article-audio-merge"
+
+
+def _mp3_duration_seconds(path: Path) -> float:
+    return MP3(path).info.length
 
 
 def _seam_report(chunks: list[Chunk], durations: list[float]) -> list[dict[str, object]]:
@@ -92,9 +97,9 @@ def test_article_chunks_are_merged_into_listenable_audio() -> None:
 
     asyncio.run(_synthesize_chunks(chunks, chunk_paths, settings, vendor, voice))
 
-    durations = [mp3_duration_seconds(path) for path in chunk_paths]
+    durations = [_mp3_duration_seconds(path) for path in chunk_paths]
     merge_mp3_files(chunk_paths, merged_path)
-    merged_duration = mp3_duration_seconds(merged_path)
+    merged_duration = _mp3_duration_seconds(merged_path)
     expected_duration = sum(durations)
     duration_tolerance = max(0.5, len(chunks) * 0.2)
 
