@@ -74,6 +74,7 @@ class ReadingRepository:
         original_text_key: str,
         vendor: str,
         voice: str,
+        job_id: str,
         abbreviation_readings: list[dict] | None = None,
     ) -> None:
         if not self.lambda_client or not self.processor_function_name:
@@ -86,6 +87,7 @@ class ReadingRepository:
                 Payload=json.dumps(
                     {
                         "reading_id": reading_id,
+                        "job_id": job_id,
                         "owner_user_id": owner_user_id,
                         "original_text_key": original_text_key,
                         "vendor": vendor,
@@ -99,6 +101,68 @@ class ReadingRepository:
 
         if response.get("StatusCode") != 202:
             raise ProcessingStartError
+
+    def create_job(self, owner_user_id: str, reading_id: str, attempt: int) -> dict:
+        job_id = self.next_id()
+        now = _now()
+        item = {
+            "pk": f"USER#{owner_user_id}",
+            "sk": f"JOB#{job_id}",
+            "job_id": job_id,
+            "reading_id": reading_id,
+            "owner_user_id": owner_user_id,
+            "attempt": attempt,
+            "status": ReadingStatus.UPLOADED.value,
+            "error": None,
+            "failed_step": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+        self.table.put_item(Item=item)
+        return item
+
+    def get_job(self, owner_user_id: str, job_id: str) -> dict | None:
+        return self._get_item(owner_user_id, job_id, item_type="JOB")
+
+    def set_job_status(
+        self,
+        owner_user_id: str,
+        job_id: str,
+        status: ReadingStatus | str,
+        error: str | None = None,
+        failed_step: str | None = None,
+    ) -> None:
+        values: dict[str, object] = {":status": str(status), ":updated_at": _now()}
+        updates = ["#status = :status", "updated_at = :updated_at"]
+        if error is not None:
+            values[":error"] = error
+            updates.append("error = :error")
+        if failed_step is not None:
+            values[":failed_step"] = failed_step
+            updates.append("failed_step = :failed_step")
+        self._update_existing(
+            owner_user_id,
+            job_id,
+            "SET " + ", ".join(updates),
+            {"#status": "status"},
+            values,
+            item_type="JOB",
+            identity_field="job_id",
+        )
+
+    def list_jobs(
+        self, owner_user_id: str, limit: int, cursor: str | None
+    ) -> tuple[list[dict], str | None]:
+        query = {
+            "KeyConditionExpression": Key("pk").eq(f"USER#{owner_user_id}")
+            & Key("sk").begins_with("JOB#"),
+            "Limit": limit,
+            "ScanIndexForward": False,
+        }
+        if start_key := _decode_cursor(cursor):
+            query["ExclusiveStartKey"] = start_key
+        response = self.table.query(**query)
+        return response.get("Items", []), _encode_cursor(response.get("LastEvaluatedKey"))
 
     def mark_processing_start_failed(self, owner_user_id: str, reading_id: str) -> None:
         self.set_status(
@@ -192,9 +256,11 @@ class ReadingRepository:
             return
         self.table.delete_item(Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"})
 
-    def _get_item(self, owner_user_id: str, reading_id: str) -> dict | None:
+    def _get_item(
+        self, owner_user_id: str, item_id: str, item_type: str = "READING"
+    ) -> dict | None:
         response = self.table.get_item(
-            Key={"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"}
+            Key={"pk": f"USER#{owner_user_id}", "sk": f"{item_type}#{item_id}"}
         )
         return response.get("Item")
 
@@ -205,11 +271,13 @@ class ReadingRepository:
         update_expression: str,
         names: dict[str, str],
         values: dict[str, object],
+        item_type: str = "READING",
+        identity_field: str = "reading_id",
     ) -> bool:
         request = {
-            "Key": {"pk": f"USER#{owner_user_id}", "sk": f"READING#{reading_id}"},
+            "Key": {"pk": f"USER#{owner_user_id}", "sk": f"{item_type}#{reading_id}"},
             "UpdateExpression": update_expression,
-            "ConditionExpression": "attribute_exists(reading_id)",
+            "ConditionExpression": f"attribute_exists({identity_field})",
             "ExpressionAttributeValues": values,
         }
         if names:

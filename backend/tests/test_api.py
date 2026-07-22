@@ -16,6 +16,7 @@ NOW = "2026-05-04T12:00:00Z"
 class FakeRepo:
     def __init__(self) -> None:
         self.items: dict[tuple[str, str], dict] = {}
+        self.jobs: dict[tuple[str, str], dict] = {}
         self.deleted: list[tuple[str, str]] = []
         self.started: list[dict[str, str | None]] = []
 
@@ -56,6 +57,7 @@ class FakeRepo:
         original_text_key: str,
         vendor: str | None,
         voice: str | None,
+        job_id: str,
         abbreviation_readings: list[dict[str, str]] | None = None,
     ) -> None:
         self.started.append(
@@ -65,8 +67,54 @@ class FakeRepo:
                 "original_text_key": original_text_key,
                 "vendor": vendor,
                 "voice": voice,
+                "job_id": job_id,
+                "abbreviation_readings": abbreviation_readings,
             }
         )
+
+    def create_job(self, owner_user_id: str, reading_id: str, attempt: int) -> dict:
+        job_id = self.next_id()
+        item = {
+            "job_id": job_id,
+            "reading_id": reading_id,
+            "owner_user_id": owner_user_id,
+            "attempt": attempt,
+            "status": "uploaded",
+            "error": None,
+            "failed_step": None,
+            "created_at": NOW,
+            "updated_at": NOW,
+        }
+        self.jobs[(owner_user_id, job_id)] = item
+        return item
+
+    def get_job(self, owner_user_id: str, job_id: str) -> dict | None:
+        return self.jobs.get((owner_user_id, job_id))
+
+    def set_job_status(
+        self,
+        owner_user_id: str,
+        job_id: str,
+        status: str,
+        error: str | None = None,
+        failed_step: str | None = None,
+    ) -> None:
+        item = self.jobs.get((owner_user_id, job_id))
+        if item is None:
+            return
+        item["status"] = str(status)
+        item["updated_at"] = NOW
+        if error is not None:
+            item["error"] = error
+        if failed_step is not None:
+            item["failed_step"] = failed_step
+
+    def list_jobs(
+        self, owner_user_id: str, limit: int, cursor: str | None
+    ) -> tuple[list[dict], str | None]:
+        del cursor
+        items = [item for (user_id, _), item in self.jobs.items() if user_id == owner_user_id]
+        return items[:limit], None
 
     def mark_processing_start_failed(self, owner_user_id: str, reading_id: str) -> None:
         item = self.items[(owner_user_id, reading_id)]
@@ -112,9 +160,11 @@ class FailingProcessingRepo(FakeRepo):
         original_text_key: str,
         vendor: str | None,
         voice: str | None,
+        job_id: str,
         abbreviation_readings: list[dict[str, str]] | None = None,
     ) -> None:
-        del owner_user_id, reading_id, original_text_key, vendor, voice, abbreviation_readings
+        del owner_user_id, reading_id, original_text_key, vendor, voice
+        del job_id, abbreviation_readings
         raise ProcessingStartError
 
 
