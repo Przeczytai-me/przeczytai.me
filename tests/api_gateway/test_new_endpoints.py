@@ -21,9 +21,13 @@ def preserved_settings(api_client: httpx.Client) -> Iterator[dict]:
     original = response.json()
     yield original
 
-    restore_payload = {
-        key: value for key, value in original.items() if key != "updated_at"
-    }
+    original_payload = _settings_payload(original)
+    current_response = api_client.get("/api/v1/settings")
+    assert current_response.status_code == 200, current_response.text
+    if _settings_payload(current_response.json()) == original_payload:
+        return
+
+    restore_payload = original_payload
     restore_response = api_client.put("/api/v1/settings", json=restore_payload)
     assert restore_response.status_code == 200, restore_response.text
 
@@ -54,8 +58,7 @@ def test_top_level_endpoints_against_deployed_api(
             method, path, json={} if method == "PUT" else None
         )
         assert response.status_code == 401, (
-            f"{method} {path} should require authentication: "
-            f"{response.status_code} {response.text}"
+            f"{method} {path} should require authentication: {response.status_code} {response.text}"
         )
 
     options_response = api_client.get("/api/v1/tts-options")
@@ -74,9 +77,7 @@ def test_top_level_endpoints_against_deployed_api(
     assert "next_cursor" in jobs
 
     marker = f"API_TEST_{uuid.uuid4().hex[:8]}"
-    settings_payload = {
-        key: value for key, value in preserved_settings.items() if key != "updated_at"
-    }
+    settings_payload = _settings_payload(preserved_settings)
     settings_payload["custom_abbreviation_readings"] = [
         *settings_payload["custom_abbreviation_readings"],
         {"abbreviation": marker, "read_as": "test integracyjny"},
@@ -188,6 +189,10 @@ def _find_job(items: list[dict], reading_id: str, attempt: int) -> dict:
         f"Expected one job for reading={reading_id} attempt={attempt}, got {matching}"
     )
     return matching[0]
+
+
+def _settings_payload(settings: dict) -> dict:
+    return {key: value for key, value in settings.items() if key != "updated_at"}
 
 
 def _wait_for_job_status(
