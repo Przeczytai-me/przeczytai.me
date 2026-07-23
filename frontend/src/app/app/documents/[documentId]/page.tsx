@@ -1,7 +1,12 @@
-import { dictionary } from "@/i18n/dictionaries";
+import { DocumentReader } from "./document-reader";
 
-const DocumentPage = () => {
-  return <p>{dictionary.app.notImplementedYet}</p>;
+type DocumentPageProps = {
+  params: Promise<{ documentId: string }>;
+};
+
+const DocumentPage = async ({ params }: DocumentPageProps) => {
+  const { documentId } = await params;
+  return <DocumentReader documentId={documentId} />;
 };
 
 export default DocumentPage;

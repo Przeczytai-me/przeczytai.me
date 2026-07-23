@@ -22,6 +22,7 @@ export const AppShell = ({ children }: AppShellProps) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isSidebarTransitioning, setIsSidebarTransitioning] = useState(false);
   const documentId = getDocumentId(pathname);
+  const isDocumentReader = Boolean(documentId);
   const currentTitle = getCurrentTitle(pathname, documentId);
   const showSidebarLabels = !(isCollapsed || isSidebarTransitioning);
 
@@ -51,7 +52,12 @@ export const AppShell = ({ children }: AppShellProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-muted/30 text-foreground">
+    <div
+      className={cn(
+        "bg-muted/30 text-foreground",
+        isDocumentReader ? "h-dvh overflow-hidden" : "min-h-screen",
+      )}
+    >
       <AppSidebar
         isCollapsed={isCollapsed}
         onToggle={handleSidebarToggle}
@@ -62,13 +68,23 @@ export const AppShell = ({ children }: AppShellProps) => {
 
       <div
         className={cn(
-          "flex min-h-screen flex-col transition-[padding-left]",
+          "flex flex-col transition-[padding-left]",
+          isDocumentReader ? "h-dvh min-h-0" : "min-h-screen",
           isCollapsed ? "pl-16" : "pl-52",
         )}
       >
         <AppTopbar currentTitle={currentTitle} documentId={documentId} />
 
-        <main className="flex-1 px-4 py-6 lg:px-8">{children}</main>
+        <main
+          className={cn(
+            "flex-1 px-4 lg:px-8",
+            isDocumentReader
+              ? "min-h-0 overflow-hidden py-4"
+              : "overflow-auto py-6",
+          )}
+        >
+          {children}
+        </main>
       </div>
 
       <div
