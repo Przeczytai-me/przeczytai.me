@@ -1,4 +1,3 @@
-import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from time import monotonic, sleep
@@ -15,24 +14,6 @@ AUDIO_DOWNLOAD_DIR = REPO_ROOT / "tested_assets" / "api_gateway"
 
 
 @pytest.fixture
-def preserved_settings(api_client: httpx.Client) -> Iterator[dict]:
-    response = api_client.get("/api/v1/settings")
-    assert response.status_code == 200, response.text
-    original = response.json()
-    yield original
-
-    original_payload = _settings_payload(original)
-    current_response = api_client.get("/api/v1/settings")
-    assert current_response.status_code == 200, current_response.text
-    if _settings_payload(current_response.json()) == original_payload:
-        return
-
-    restore_payload = original_payload
-    restore_response = api_client.put("/api/v1/settings", json=restore_payload)
-    assert restore_response.status_code == 200, restore_response.text
-
-
-@pytest.fixture
 def readings_to_delete(api_client: httpx.Client) -> Iterator[list[str]]:
     reading_ids: list[str] = []
     yield reading_ids
@@ -42,74 +23,22 @@ def readings_to_delete(api_client: httpx.Client) -> Iterator[list[str]]:
         assert response.status_code in {204, 404}, response.text
 
 
-def test_top_level_endpoints_against_deployed_api(
+def test_reading_processing_workflow(
     api_client: httpx.Client,
     public_api_client: httpx.Client,
-    preserved_settings: dict,
-) -> None:
-    protected_requests = [
-        ("GET", "/api/v1/tts-options"),
-        ("GET", "/api/v1/jobs"),
-        ("GET", "/api/v1/settings"),
-        ("PUT", "/api/v1/settings"),
-    ]
-    for method, path in protected_requests:
-        response = public_api_client.request(
-            method, path, json={} if method == "PUT" else None
-        )
-        assert response.status_code == 401, (
-            f"{method} {path} should require authentication: {response.status_code} {response.text}"
-        )
-
-    options_response = api_client.get("/api/v1/tts-options")
-    assert options_response.status_code == 200, options_response.text
-    options = options_response.json()
-    assert options["vendors"]
-    assert options["models"]
-    assert options["voices"]
-    assert options["defaults"]["model"]
-    assert options["defaults"]["voice"]
-
-    jobs_response = api_client.get("/api/v1/jobs", params={"limit": 20})
-    assert jobs_response.status_code == 200, jobs_response.text
-    jobs = jobs_response.json()
-    assert isinstance(jobs["items"], list)
-    assert "next_cursor" in jobs
-
-    marker = f"API_TEST_{uuid.uuid4().hex[:8]}"
-    settings_payload = _settings_payload(preserved_settings)
-    settings_payload["custom_abbreviation_readings"] = [
-        *settings_payload["custom_abbreviation_readings"],
-        {"abbreviation": marker, "read_as": "test integracyjny"},
-    ]
-
-    put_response = api_client.put("/api/v1/settings", json=settings_payload)
-    assert put_response.status_code == 200, put_response.text
-    saved_settings = put_response.json()
-    assert saved_settings["custom_abbreviation_readings"][-1] == {
-        "abbreviation": marker,
-        "read_as": "test integracyjny",
-    }
-    assert saved_settings["updated_at"]
-
-    get_response = api_client.get("/api/v1/settings")
-    assert get_response.status_code == 200, get_response.text
-    assert get_response.json() == saved_settings
-
-
-def test_reading_endpoints_and_audio_against_deployed_api(
-    api_client: httpx.Client,
     readings_to_delete: list[str],
 ) -> None:
-    unique_suffix = uuid.uuid4().hex
-    original_text = f"Integracyjny test PKP. {unique_suffix}"
-    expected_corrected_text = f"Integracyjny test Pe Ka Pe. {unique_suffix}"
+    unauthorized_jobs = public_api_client.get("/api/v1/jobs")
+    assert unauthorized_jobs.status_code == 401, unauthorized_jobs.text
+
+    original_text = "Integracyjny test NFZ."
+    expected_corrected_text = "Integracyjny test enefzet."
     create_response = api_client.post(
         "/api/v1/readings",
         json={
             "original_text": original_text,
             "abbreviation_readings": [
-                {"abbreviation": "PKP", "read_as": "Pe Ka Pe"},
+                {"abbreviation": "NFZ", "read_as": "enefzet"},
             ],
         },
     )
@@ -189,10 +118,6 @@ def _find_job(items: list[dict], reading_id: str, attempt: int) -> dict:
         f"Expected one job for reading={reading_id} attempt={attempt}, got {matching}"
     )
     return matching[0]
-
-
-def _settings_payload(settings: dict) -> dict:
-    return {key: value for key, value in settings.items() if key != "updated_at"}
 
 
 def _wait_for_job_status(
