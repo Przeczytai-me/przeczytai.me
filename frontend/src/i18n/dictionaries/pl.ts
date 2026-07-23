@@ -273,18 +273,62 @@ export const pl = {
     newDocument: {
       heading: "Nowy dokument",
       description:
-        "Dodaj tekst do przetworzenia na uporządkowany materiał i narrację.",
-      fileLabel: "Plik źródłowy",
-      fileDescription: "Wybierz plik .txt lub .md albo wklej tekst poniżej.",
-      selectedFile: "Wybrany plik",
-      unsupportedFile: "Obsługiwane są tylko pliki .txt i .md.",
-      textPlaceholder: "Wklej tekst dokumentu",
-      vendorPlaceholder: "Dostawca głosu (opcjonalnie)",
-      voicePlaceholder: "Głos (opcjonalnie)",
-      limitNote: "Limit v1:",
+        "Prześlij plik, sprawdź wykrytą treść i rozpocznij tworzenie narracji.",
+      upload: {
+        title: "Prześlij plik źródłowy",
+        description: "Przeciągnij tutaj jeden plik .txt lub .md.",
+        inputLabel: "Wybierz plik z urządzenia",
+        supportedFormats: "Obsługiwane formaty: .txt i .md",
+        limitNote:
+          "W wersji 1 dokument może zawierać maksymalnie 10 000 znaków.",
+      },
+      preview: {
+        title: "Podgląd źródła",
+        description: "Sprawdź właściwości pliku i początek odczytanej treści.",
+        fileName: "Nazwa pliku",
+        fileType: "Typ",
+        fileSize: "Rozmiar",
+        characterCount: "Wykryte znaki",
+        content: "Początek treści",
+        removeFile: "Usuń wybrany plik",
+        truncated: "Podgląd został skrócony.",
+        types: {
+          markdown: "Markdown (.md)",
+          text: "Tekst (.txt)",
+        },
+      },
+      abbreviations: {
+        title: "Odczyty skrótów",
+        description:
+          "PrzeczytAI.me próbuje poprawnie czytać skróty automatycznie. Jeśli potrzebujesz pełnej kontroli, podaj dokładny sposób odczytu.",
+        scope:
+          "Odczyty dodane tutaj dotyczą tylko tego dokumentu. Domyślne odczyty możesz zapisać w ustawieniach.",
+        empty: "Nie dodano odczytów tylko dla tego dokumentu.",
+        abbreviationLabel: "Skrót",
+        readAsLabel: "Czytaj jako",
+        abbreviationPlaceholder: "np. prof.",
+        readAsPlaceholder: "np. profesor",
+        add: "Dodaj odczyt",
+        remove: "Usuń odczyt",
+      },
+      errors: {
+        singleFile: "Prześlij dokładnie jeden plik.",
+        unsupportedFile:
+          "Ten format nie jest obsługiwany. Wybierz plik z rozszerzeniem .txt lub .md.",
+        readFailed:
+          "Nie udało się odczytać pliku. Wybierz go ponownie albo użyj innego pliku.",
+        emptyFile: "Plik nie zawiera tekstu do przetworzenia.",
+        tooLong: "Wykryto {count} znaków. Limit wersji 1 wynosi 10 000 znaków.",
+        incompleteAbbreviation:
+          "Uzupełnij oba pola odczytu skrótu albo usuń ten wiersz.",
+        duplicateAbbreviation: "Ten skrót został już dodany.",
+        submit:
+          "Nie udało się rozpocząć przetwarzania. Sprawdź dane i spróbuj ponownie.",
+      },
+      submitNote:
+        "Po uruchomieniu wrócisz do dokumentów, gdzie zobaczysz bieżący status przetwarzania.",
       create: "czytAI",
-      creating: "Tworzenie",
-      created: "Utworzono",
+      creating: "Uruchamianie...",
     },
     account: {
       heading: "Konto",
