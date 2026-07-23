@@ -1,15 +1,22 @@
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any
 
-from app.audio import merge_mp3_files
+from app.audio import merge_mp3_files, mp3_duration_seconds
 from app.config import Settings, get_settings
 from app.models import ReadingStatus
-from app.normalization import RULE_BASED_NORMALIZATION_VERSION, ai_normalize, normalize
+from app.normalization import (
+    RULE_BASED_NORMALIZATION_VERSION,
+    apply_abbreviation_readings,
+    ai_normalize,
+    normalize,
+)
 from app.repositories.readings import ReadingRepository
 from app.splitting import split_text
 from app.storage import FileStorage
+from app.timing import build_timing_map
 from app.tts import (
     ensure_tts_provider_available,
     resolve_tts_selection,
@@ -22,6 +29,12 @@ from app.tts import (
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 TERMINAL_READING_STATUSES = {"completed", "failed"}
+TERMINAL_JOB_STATUSES = {"completed", "failed", "failed_to_start"}
+JOB_FAILURE_MESSAGES = {
+    ReadingStatus.NORMALIZING: "Text normalization failed",
+    ReadingStatus.GENERATING_AUDIO: "Audio generation failed",
+    ReadingStatus.MERGING_AUDIO: "Audio merging failed",
+}
 
 
 async def process_reading(
@@ -36,29 +49,38 @@ async def process_reading(
     repo = repo or ReadingRepository(settings.readings_table_name, None)
 
     reading_id = str(event["reading_id"])
+    job_id = event.get("job_id")
     owner_user_id = str(event["owner_user_id"])
     original_text_key = str(event["original_text_key"])
-    selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
+    pairs = event.get("abbreviation_readings")
     current_stage = ReadingStatus.NORMALIZING
 
-    existing = repo.get(owner_user_id, reading_id)
     try:
-        if existing and existing.get("status") in TERMINAL_READING_STATUSES:
-            return {"status": str(existing["status"])}
+        if job_id:
+            existing_job = repo.get_job(owner_user_id, str(job_id))
+            if existing_job and existing_job.get("status") in TERMINAL_JOB_STATUSES:
+                return {"status": str(existing_job["status"])}
+        else:
+            existing = repo.get(owner_user_id, reading_id)
+            if existing and existing.get("status") in TERMINAL_READING_STATUSES:
+                return {"status": str(existing["status"])}
 
+        selection = resolve_tts_selection(event.get("vendor"), event.get("voice"))
         ensure_tts_provider_available(selection, settings)
         original_text = storage.get_text(original_text_key)
         provider = validate_tts_input(original_text, selection)
         repo.set_status(owner_user_id, reading_id, current_stage)
+        if job_id:
+            repo.set_job_status(owner_user_id, str(job_id), current_stage)
+        corrected = apply_abbreviation_readings(original_text, pairs)
         try:
-            corrected = normalize(original_text)
+            corrected = normalize(corrected)
             normalization_status = RULE_BASED_NORMALIZATION_VERSION
         except Exception:
             logger.exception(
                 "text normalization failed",
                 extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
             )
-            corrected = original_text
             normalization_status = "failed"
 
         if settings.ai_normalization_enabled and normalization_status != "failed":
@@ -70,8 +92,14 @@ async def process_reading(
                     extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
                 )
 
-        corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id)
-        recording_key = storage.recording_key(owner_user_id, reading_id, provider.output_extension)
+        corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id, job_id=job_id)
+        recording_key = storage.recording_key(
+            owner_user_id,
+            reading_id,
+            provider.output_extension,
+            job_id=job_id,
+        )
+        timing_map_key = storage.timing_map_key(owner_user_id, reading_id, job_id=job_id)
         recording_path = Path("/tmp") / f"{reading_id}.{provider.output_extension}"
         chunks = split_text(corrected, settings.max_chunk_chars)
 
@@ -86,15 +114,20 @@ async def process_reading(
         )
 
         storage.put_text(corrected_text_key, corrected, "text/markdown; charset=utf-8")
-        chunk_paths = [
-            Path("/tmp") / f"{reading_id}-{chunk.index:04d}.mp3" for chunk in chunks
-        ]
+        chunk_paths = [Path("/tmp") / f"{reading_id}-{chunk.index:04d}.mp3" for chunk in chunks]
         current_stage = ReadingStatus.GENERATING_AUDIO
         repo.set_status(owner_user_id, reading_id, current_stage)
+        if job_id:
+            repo.set_job_status(owner_user_id, str(job_id), current_stage)
         for chunk, chunk_path in zip(chunks, chunk_paths, strict=True):
             await synthesize(chunk.text, str(chunk_path), selection, settings)
+        durations = [mp3_duration_seconds(chunk_path) for chunk_path in chunk_paths]
+        timing_map = build_timing_map(chunks, durations)
+        storage.put_text(timing_map_key, json.dumps(timing_map), "application/json")
         current_stage = ReadingStatus.MERGING_AUDIO
         repo.set_status(owner_user_id, reading_id, current_stage)
+        if job_id:
+            repo.set_job_status(owner_user_id, str(job_id), current_stage)
         merge_mp3_files(chunk_paths, recording_path)
         storage.put_bytes(recording_key, recording_path.read_bytes(), provider.content_type)
 
@@ -110,7 +143,10 @@ async def process_reading(
             corrected_text_key,
             recording_key,
             metadata,
+            timing_map_key,
         )
+        if job_id:
+            repo.set_job_status(owner_user_id, str(job_id), ReadingStatus.COMPLETED)
         return {"status": "completed"}
     except Exception as exc:
         logger.exception(
@@ -118,7 +154,7 @@ async def process_reading(
             extra={
                 "reading_id": reading_id,
                 "owner_user_id": owner_user_id,
-                "vendor": selection.vendor,
+                "vendor": event.get("vendor"),
             },
         )
         try:
@@ -133,6 +169,20 @@ async def process_reading(
                 "failed to mark reading failed",
                 extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
             )
+        if job_id:
+            try:
+                repo.set_job_status(
+                    owner_user_id,
+                    str(job_id),
+                    ReadingStatus.FAILED,
+                    error=JOB_FAILURE_MESSAGES[current_stage],
+                    failed_step=current_stage.value,
+                )
+            except Exception:
+                logger.exception(
+                    "failed to mark job failed",
+                    extra={"job_id": job_id, "owner_user_id": owner_user_id},
+                )
         raise
     finally:
         for temporary_path in Path("/tmp").glob(f"{reading_id}*"):

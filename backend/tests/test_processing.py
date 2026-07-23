@@ -5,6 +5,7 @@ import pytest
 
 from app import models
 from app.config import Settings
+from app.normalization import RULE_BASED_NORMALIZATION_VERSION
 from app.processing import process_reading
 from app.splitting import split_text
 from app.tts import DEFAULT_TTS_VENDOR, EDGE_TTS_VOICE, OPENAI_TTS_MODEL, TtsSelection
@@ -28,11 +29,27 @@ class FakeStorage:
         del content_type
         self.bytes[key] = content
 
-    def corrected_text_key(self, owner_user_id: str, reading_id: str) -> str:
-        return f"users/{owner_user_id}/readings/{reading_id}/corrected.md"
+    def corrected_text_key(
+        self, owner_user_id: str, reading_id: str, job_id: str | None = None
+    ) -> str:
+        filename = "corrected.md" if job_id is None else f"corrected-{job_id}.md"
+        return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
 
-    def recording_key(self, owner_user_id: str, reading_id: str, extension: str = "mp3") -> str:
-        return f"users/{owner_user_id}/readings/{reading_id}/recording.{extension}"
+    def recording_key(
+        self,
+        owner_user_id: str,
+        reading_id: str,
+        extension: str = "mp3",
+        job_id: str | None = None,
+    ) -> str:
+        filename = f"recording.{extension}" if job_id is None else f"recording-{job_id}.{extension}"
+        return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
+
+    def timing_map_key(
+        self, owner_user_id: str, reading_id: str, job_id: str | None = None
+    ) -> str:
+        filename = "timing.json" if job_id is None else f"timing-{job_id}.json"
+        return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
 
 
 class FakeRepo:
@@ -53,12 +70,14 @@ class FakeRepo:
         corrected_text_key: str,
         recording_key: str,
         metadata: dict[str, object],
+        timing_map_key: str,
     ) -> None:
         self.completed = {
             "owner_user_id": owner_user_id,
             "reading_id": reading_id,
             "corrected_text_key": corrected_text_key,
             "recording_key": recording_key,
+            "timing_map_key": timing_map_key,
             "metadata": metadata,
         }
         self.set_status(owner_user_id, reading_id, "completed", metadata)
@@ -114,6 +133,7 @@ def test_processing_generates_same_text_and_recording() -> None:
 
     corrected_text_key = "users/user-1/readings/job-1/corrected.md"
     recording_key = "users/user-1/readings/job-1/recording.mp3"
+    timing_map_key = "users/user-1/readings/job-1/timing.json"
     assert result == {"status": "completed"}
     assert storage.texts[corrected_text_key] == "Ala ma kota."
     assert storage.bytes[recording_key] == b"mp3:edge-tts:pl-PL-ZofiaNeural:Ala ma kota."
@@ -122,10 +142,11 @@ def test_processing_generates_same_text_and_recording() -> None:
         "reading_id": "job-1",
         "corrected_text_key": corrected_text_key,
         "recording_key": recording_key,
+        "timing_map_key": timing_map_key,
         "metadata": {
             "processor": DEFAULT_TTS_VENDOR,
             "voice": EDGE_TTS_VOICE,
-            "normalization": "regex-v1",
+            "normalization": RULE_BASED_NORMALIZATION_VERSION,
             "chunks": 1,
             "merge": "byte-concat-v1",
         },
@@ -167,7 +188,7 @@ def test_processing_uses_requested_voice() -> None:
     assert repo.completed["metadata"] == {
         "processor": DEFAULT_TTS_VENDOR,
         "voice": "en-US-EmmaMultilingualNeural",
-        "normalization": "regex-v1",
+        "normalization": RULE_BASED_NORMALIZATION_VERSION,
         "chunks": 1,
         "merge": "byte-concat-v1",
     }
@@ -207,7 +228,7 @@ def test_processing_uses_requested_openai_vendor() -> None:
         "processor": "openai",
         "voice": "coral",
         "model": OPENAI_TTS_MODEL,
-        "normalization": "regex-v1",
+        "normalization": RULE_BASED_NORMALIZATION_VERSION,
         "chunks": 1,
         "merge": "byte-concat-v1",
     }
@@ -278,7 +299,10 @@ def test_processing_normalizes_dirty_text() -> None:
     assert storage.texts[corrected_text_key] == expected
     assert storage.bytes[recording_key].endswith(expected.encode())
     assert repo.completed is not None
-    assert repo.completed["metadata"]["normalization"] == "regex-v1"
+    assert (
+        repo.completed["metadata"]["normalization"]
+        == RULE_BASED_NORMALIZATION_VERSION
+    )
 
 
 def test_processing_falls_back_when_normalize_raises(monkeypatch) -> None:
@@ -381,7 +405,10 @@ def test_processing_falls_back_to_regex_when_ai_normalize_raises(monkeypatch) ->
     assert result == {"status": "completed"}
     assert storage.texts[corrected_text_key] == "Ala ma kota."
     assert repo.completed is not None
-    assert repo.completed["metadata"]["normalization"] == "regex-v1"
+    assert (
+        repo.completed["metadata"]["normalization"]
+        == RULE_BASED_NORMALIZATION_VERSION
+    )
 
 
 def test_processing_synthesizes_and_merges_multiple_chunks_in_order() -> None:

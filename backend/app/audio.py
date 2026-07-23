@@ -7,9 +7,15 @@ concat demuxer in the processor image.
 
 from pathlib import Path
 
+from mutagen.mp3 import MP3
+
 
 class AudioMergeError(Exception):
     pass
+
+
+def mp3_duration_seconds(path: Path) -> float:
+    return float(MP3(path).info.length)
 
 
 def merge_mp3_files(paths: list[Path], output: Path) -> None:

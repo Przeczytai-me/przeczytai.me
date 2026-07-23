@@ -12,6 +12,10 @@ class StorageConfigurationError(StorageError):
     pass
 
 
+class StorageObjectNotFoundError(StorageError):
+    pass
+
+
 class FileStorage:
     def __init__(self, bucket_name: str | None) -> None:
         self.bucket_name = bucket_name
@@ -20,11 +24,31 @@ class FileStorage:
     def original_text_key(self, owner_user_id: str, reading_id: str) -> str:
         return self._key(owner_user_id, reading_id, "original.txt")
 
-    def corrected_text_key(self, owner_user_id: str, reading_id: str) -> str:
-        return self._key(owner_user_id, reading_id, "corrected.md")
+    def corrected_text_key(
+        self, owner_user_id: str, reading_id: str, job_id: str | None = None
+    ) -> str:
+        filename = "corrected.md" if job_id is None else f"corrected-{job_id}.md"
+        return self._key(owner_user_id, reading_id, filename)
 
-    def recording_key(self, owner_user_id: str, reading_id: str, extension: str = "mp3") -> str:
-        return self._key(owner_user_id, reading_id, f"recording.{extension}")
+    def recording_key(
+        self,
+        owner_user_id: str,
+        reading_id: str,
+        extension: str = "mp3",
+        job_id: str | None = None,
+    ) -> str:
+        filename = (
+            f"recording.{extension}"
+            if job_id is None
+            else f"recording-{job_id}.{extension}"
+        )
+        return self._key(owner_user_id, reading_id, filename)
+
+    def timing_map_key(
+        self, owner_user_id: str, reading_id: str, job_id: str | None = None
+    ) -> str:
+        filename = "timing.json" if job_id is None else f"timing-{job_id}.json"
+        return self._key(owner_user_id, reading_id, filename)
 
     def put_text(self, key: str, content: str, content_type: str) -> None:
         self.put_bytes(key, content.encode(), content_type)
@@ -48,7 +72,11 @@ class FileStorage:
         try:
             response = self.s3.get_object(Bucket=self.bucket_name, Key=key)
             return response["Body"].read().decode()
-        except (BotoCoreError, ClientError) as exc:
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in {"NoSuchKey", "404"}:
+                raise StorageObjectNotFoundError from exc
+            raise StorageError from exc
+        except BotoCoreError as exc:
             raise StorageError from exc
 
     def download_url(self, key: str, filename: str) -> str:

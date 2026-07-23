@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -6,9 +7,18 @@ from fastapi.responses import RedirectResponse
 from app.auth import CurrentUser, get_current_user
 from app.config import Settings, get_settings
 from app.errors import ApiException
-from app.models import Reading, ReadingCreateRequest, ReadingListResponse
-from app.repositories.readings import ProcessingStartError, ReadingRepository
-from app.storage import FileStorage, StorageError
+from app.job_serialization import serialize_job
+from app.models import (
+    AbbreviationReading,
+    Job,
+    Reading,
+    ReadingCreateRequest,
+    ReadingListResponse,
+    ReadingStatus,
+    TimingMapResponse,
+)
+from app.repositories.readings import ProcessingStartError, ReadingRepository, RetryConflictError
+from app.storage import FileStorage, StorageError, StorageObjectNotFoundError
 from app.tts import (
     TtsInputTooLargeError,
     TtsProviderUnavailableError,
@@ -27,6 +37,11 @@ REQUIRED_READING_FIELDS = {
     "char_count",
     "created_at",
     "updated_at",
+}
+TERMINAL_READING_STATUSES = {
+    ReadingStatus.COMPLETED,
+    ReadingStatus.FAILED,
+    ReadingStatus.FAILED_TO_START,
 }
 
 
@@ -78,6 +93,31 @@ def _normalize_original_text(original_text: str, max_text_chars: int) -> str:
     return original_text
 
 
+def _normalize_abbreviation_readings(
+    pairs: list[AbbreviationReading] | None,
+) -> list[dict[str, str]] | None:
+    if not pairs:
+        return None
+    if len(pairs) > 100:
+        raise ApiException("validation_error", "Too many abbreviation readings", 422)
+
+    normalized = []
+    abbreviations = set()
+    for pair in pairs:
+        abbreviation = pair.abbreviation.strip()
+        read_as = pair.read_as.strip()
+        if not abbreviation or not read_as:
+            raise ApiException("validation_error", "Abbreviation readings must not be empty", 422)
+        if len(abbreviation) > 50 or len(read_as) > 200:
+            raise ApiException("validation_error", "Abbreviation reading is too long", 422)
+        key = abbreviation.casefold()
+        if key in abbreviations:
+            raise ApiException("validation_error", "Duplicate abbreviation reading", 422)
+        abbreviations.add(key)
+        normalized.append({"abbreviation": abbreviation, "read_as": read_as})
+    return normalized
+
+
 def _resolve_create_tts_selection(
     request: ReadingCreateRequest, original_text: str, settings: Settings
 ) -> TtsSelection:
@@ -118,6 +158,7 @@ async def create_reading(
     settings: Settings = Depends(get_settings),
 ) -> Reading:
     original_text = _normalize_original_text(request.original_text, settings.max_text_chars)
+    abbreviation_readings = _normalize_abbreviation_readings(request.abbreviation_readings)
     selection = _resolve_create_tts_selection(request, original_text, settings)
     reading_id = repo.next_id()
     original_text_key = _store_original_text(
@@ -133,7 +174,9 @@ async def create_reading(
         len(original_text),
         selection.vendor,
         selection.voice,
+        abbreviation_readings=abbreviation_readings,
     )
+    job = repo.create_job(user.user_id, reading_id, attempt=1)
     try:
         repo.start_processing(
             user.user_id,
@@ -141,9 +184,18 @@ async def create_reading(
             original_text_key,
             selection.vendor,
             selection.voice,
+            job["job_id"],
+            abbreviation_readings=abbreviation_readings,
         )
     except ProcessingStartError as exc:
         repo.mark_processing_start_failed(user.user_id, reading_id)
+        repo.set_job_status(
+            user.user_id,
+            job["job_id"],
+            ReadingStatus.FAILED_TO_START,
+            error="Failed to start reading processing",
+            failed_step="start_processing",
+        )
         raise ApiException(
             "processing_start_failed",
             "Failed to start reading processing",
@@ -173,6 +225,75 @@ async def get_reading(
     repo: ReadingRepository = Depends(get_reading_repository),
 ) -> Reading:
     return _reading(_get_user_reading(user.user_id, reading_id, repo))
+
+
+@router.get("/{reading_id}/timing-map", response_model=TimingMapResponse)
+async def get_timing_map(
+    reading_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: ReadingRepository = Depends(get_reading_repository),
+    storage: FileStorage = Depends(get_file_storage),
+) -> TimingMapResponse:
+    item = _get_user_reading(user.user_id, reading_id, repo)
+    if item["status"] not in TERMINAL_READING_STATUSES:
+        raise ApiException("timing_map_not_ready", "Timing map is not ready", 409)
+    timing_map_key = item.get("timing_map_key")
+    if not timing_map_key:
+        raise ApiException("timing_map_unavailable", "Timing map is not available", 404)
+    try:
+        timing_map = json.loads(storage.get_text(str(timing_map_key)))
+    except StorageError as exc:
+        raise ApiException("storage_error", "Failed to load timing map", 500) from exc
+    return TimingMapResponse(
+        reading_id=reading_id,
+        duration_ms=timing_map["duration_ms"],
+        segments=timing_map["segments"],
+    )
+
+
+@router.post("/{reading_id}/retry", response_model=Job, status_code=status.HTTP_202_ACCEPTED)
+async def retry_reading(
+    reading_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: ReadingRepository = Depends(get_reading_repository),
+) -> Job:
+    item = _get_user_reading(user.user_id, reading_id, repo)
+    try:
+        attempt = repo.begin_retry(user.user_id, reading_id)
+    except RetryConflictError as exc:
+        raise ApiException(
+            "conflict",
+            "A processing attempt is already active for this reading",
+            409,
+        ) from exc
+
+    job = repo.create_job(user.user_id, reading_id, attempt)
+    try:
+        repo.start_processing(
+            user.user_id,
+            reading_id,
+            item["original_text_key"],
+            item["vendor"],
+            item["voice"],
+            job["job_id"],
+            abbreviation_readings=item.get("abbreviation_readings"),
+        )
+    except ProcessingStartError as exc:
+        repo.mark_processing_start_failed(user.user_id, reading_id)
+        repo.set_job_status(
+            user.user_id,
+            job["job_id"],
+            ReadingStatus.FAILED_TO_START,
+            error="Failed to start reading processing",
+            failed_step="start_processing",
+        )
+        raise ApiException(
+            "processing_start_failed",
+            "Failed to start reading processing",
+            500,
+        ) from exc
+
+    return serialize_job(job)
 
 
 @router.delete("/{reading_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -223,4 +344,28 @@ async def download_corrected_text(
         content=corrected_text,
         media_type="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="{reading_id}.md"'},
+    )
+
+
+@router.get("/{reading_id}/original-text")
+async def download_original_text(
+    reading_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: ReadingRepository = Depends(get_reading_repository),
+    storage: FileStorage = Depends(get_file_storage),
+) -> Response:
+    item = _get_user_reading(user.user_id, reading_id, repo)
+    original_text_key = str(item["original_text_key"])
+    try:
+        original_text = storage.get_text(original_text_key)
+    except StorageObjectNotFoundError as exc:
+        raise ApiException("not_found", "Original text not found", 404) from exc
+    except StorageError as exc:
+        raise ApiException("storage_error", "Failed to load original text", 500) from exc
+    extension = Path(original_text_key).suffix or ".txt"
+    media_type = "text/markdown" if extension == ".md" else "text/plain"
+    return Response(
+        content=original_text,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{reading_id}{extension}"'},
     )
