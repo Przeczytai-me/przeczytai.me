@@ -37,19 +37,19 @@ def run_processing(
 
 
 @pytest.mark.parametrize(
-    ("original_text", "abbreviation", "read_as", "built_in_expansion"),
+    ("original_text", "abbreviation", "read_as", "expected"),
     [
-        ("Np. Ala ma kota.", "Np.", "en pe", "Na przykład"),
-        ("To m.in. działa.", "m.in.", "em in", "między innymi"),
+        ("Np. Ala ma kota.", "Np.", "en pe", "en pe Ala ma kota."),
+        ("To m.in. działa.", "m.in.", "em in", "To em in działa."),
     ],
 )
-def test_processing_custom_pairs_override_builtin_abbreviation_expansion(
+def test_processing_applies_custom_pairs_before_rule_based_normalization(
     original_text: str,
     abbreviation: str,
     read_as: str,
-    built_in_expansion: str,
+    expected: str,
 ) -> None:
-    """Apply a custom pair to original text before built-in normalization runs."""
+    """Apply a custom pair to original text before rule-based normalization runs."""
     original_key = "users/user-1/readings/job-1/original.txt"
     event = {
         "reading_id": "job-1",
@@ -70,8 +70,7 @@ def test_processing_custom_pairs_override_builtin_abbreviation_expansion(
     corrected = storage.texts[corrected_key]
     assert result == {"status": "completed"}
     assert storage.texts[original_key] == original_text
-    assert read_as in corrected
-    assert built_in_expansion not in corrected
+    assert corrected == expected
     assert synthesized_texts == [corrected]
 
 
@@ -137,8 +136,8 @@ def test_processing_applies_pairs_before_optional_ai_normalize(
     assert synthesized_texts == [expected]
 
 
-def test_processing_without_abbreviation_key_preserves_legacy_behavior() -> None:
-    """Leave corrected and synthesized text unchanged for a legacy event."""
+def test_processing_without_abbreviation_key_preserves_current_behavior() -> None:
+    """Leave corrected and synthesized text unchanged when no custom pairs are provided."""
     original_key = "users/user-1/readings/job-1/original.txt"
     original_text = "Np. Kod PKP pozostaje."
     event = {
@@ -154,7 +153,7 @@ def test_processing_without_abbreviation_key_preserves_legacy_behavior() -> None
     result = run_processing(event, storage, repo, synthesized_texts)
 
     corrected_key = storage.corrected_text_key("user-1", "job-1")
-    expected = "Na przykład Kod PKP pozostaje."
+    expected = original_text
     assert result == {"status": "completed"}
     assert storage.texts[original_key] == original_text
     assert storage.texts[corrected_key] == expected

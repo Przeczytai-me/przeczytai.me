@@ -34,7 +34,7 @@ resource "aws_apigatewayv2_api" "this" {
 
   cors_configuration {
     allow_headers = ["authorization", "content-type"]
-    allow_methods = ["GET", "POST", "DELETE", "OPTIONS"]
+    allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     allow_origins = var.allowed_origins
     max_age       = 3600
   }
@@ -70,6 +70,38 @@ resource "aws_apigatewayv2_route" "readings" {
 resource "aws_apigatewayv2_route" "reading_proxy" {
   api_id             = aws_apigatewayv2_api.this.id
   route_key          = "ANY /api/v1/readings/{proxy+}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.clerk.id
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "jobs" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "GET /api/v1/jobs"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.clerk.id
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "settings_get" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "GET /api/v1/settings"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.clerk.id
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "settings_put" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "PUT /api/v1/settings"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.clerk.id
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "tts_options" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "GET /api/v1/tts-options"
   authorization_type = "JWT"
   authorizer_id      = aws_apigatewayv2_authorizer.clerk.id
   target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"

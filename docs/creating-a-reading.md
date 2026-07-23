@@ -81,6 +81,6 @@ curl -sS "$API/api/v1/readings/{id}/corrected-text.md" -H "Authorization: Bearer
 - `GET /api/v1/readings` — list the signed-in user's readings (paginated via
   `limit` and `cursor`).
 - `DELETE /api/v1/readings/{id}` — delete a reading.
-
-A reading that ends in `failed` is re-processed by submitting the text again;
-there is no retry endpoint in v1.
+- `POST /api/v1/readings/{id}/retry` — start another processing attempt for an
+  existing reading. The endpoint returns the new processing job with status
+  `202 Accepted`.

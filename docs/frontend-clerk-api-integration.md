@@ -11,6 +11,13 @@ must call protected endpoints with a Clerk JWT bearer token.
 - `DELETE /api/v1/readings/{reading_id}`
 - `GET /api/v1/readings/{reading_id}/recording`
 - `GET /api/v1/readings/{reading_id}/corrected-text.md`
+- `GET /api/v1/readings/{reading_id}/original-text`
+- `GET /api/v1/readings/{reading_id}/timing-map`
+- `POST /api/v1/readings/{reading_id}/retry`
+- `GET /api/v1/jobs`
+- `GET /api/v1/settings`
+- `PUT /api/v1/settings`
+- `GET /api/v1/tts-options`
 
 Public endpoints:
 
