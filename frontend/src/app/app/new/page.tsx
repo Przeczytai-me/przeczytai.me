@@ -1,7 +1,7 @@
-import { CreateReading } from "../create-reading";
+import { NewDocumentForm } from "./_components/new-document-form";
 
 const NewDocumentPage = () => {
-  return <CreateReading />;
+  return <NewDocumentForm />;
 };
 
 export default NewDocumentPage;

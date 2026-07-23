@@ -1,21 +1,18 @@
 export const supportedDocumentFileExtensions = [".txt", ".md"] as const;
 
-export const supportedDocumentMimeTypes = [
-  "text/plain",
-  "text/markdown",
-] as const;
+export const supportedDocumentAccept =
+  supportedDocumentFileExtensions.join(",");
 
-export const supportedDocumentAccept = [
-  ...supportedDocumentFileExtensions,
-  ...supportedDocumentMimeTypes,
-].join(",");
-
-export const isSupportedDocumentFile = (file: File) => {
-  const normalizedName = file.name.toLowerCase();
+export const getSupportedDocumentExtension = (fileName: string) => {
+  const normalizedName = fileName.toLowerCase();
 
   return (
-    supportedDocumentFileExtensions.some((extension) =>
+    supportedDocumentFileExtensions.find((extension) =>
       normalizedName.endsWith(extension),
-    ) || supportedDocumentMimeTypes.some((mimeType) => file.type === mimeType)
+    ) ?? null
   );
+};
+
+export const isSupportedDocumentFile = (file: File) => {
+  return getSupportedDocumentExtension(file.name) !== null;
 };
