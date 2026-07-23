@@ -19,13 +19,30 @@ export const startMockWorker = () => {
 const realApiRoutes = [
   { method: "GET", path: /^\/api\/v1\/health$/ },
   { method: "GET", path: /^\/api\/v1\/readings$/ },
+  { method: "POST", path: /^\/api\/v1\/readings$/ },
+  { method: "GET", path: /^\/api\/v1\/jobs$/ },
   { method: "GET", path: /^\/api\/v1\/readings\/[^/]+$/ },
   { method: "DELETE", path: /^\/api\/v1\/readings\/[^/]+$/ },
+  {
+    method: "POST",
+    path: /^\/api\/v1\/readings\/[^/]+\/retry$/,
+  },
+  {
+    method: "GET",
+    path: /^\/api\/v1\/readings\/[^/]+\/original-text$/,
+  },
+  {
+    method: "GET",
+    path: /^\/api\/v1\/readings\/[^/]+\/timing-map$/,
+  },
   { method: "GET", path: /^\/api\/v1\/readings\/[^/]+\/recording$/ },
   {
     method: "GET",
     path: /^\/api\/v1\/readings\/[^/]+\/corrected-text$/,
   },
+  { method: "GET", path: /^\/api\/v1\/settings$/ },
+  { method: "PUT", path: /^\/api\/v1\/settings$/ },
+  { method: "GET", path: /^\/api\/v1\/tts-options$/ },
 ];
 
 function onUnhandledRequest(request: Request, print: { warning: () => void }) {

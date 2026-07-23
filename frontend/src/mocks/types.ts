@@ -1,5 +1,7 @@
 import type { ReadingCreateRequest } from "@/lib/api";
 
+export type { TimingMap } from "@/lib/api";
+
 export type AbbreviationReading = {
   abbreviation: string;
   read_as: string;
@@ -36,18 +38,6 @@ export type ProcessingJob = {
 export type ProcessingJobListResponse = {
   items: ProcessingJob[];
   next_cursor: string | null;
-};
-
-export type TimingMap = {
-  reading_id: string;
-  duration_ms: number;
-  segments: Array<{
-    id: string;
-    text: string;
-    paragraph_index: number;
-    start_ms: number;
-    end_ms: number;
-  }>;
 };
 
 export type UserSettings = {

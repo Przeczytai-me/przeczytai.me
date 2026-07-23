@@ -164,6 +164,112 @@ export const pl = {
         downloadFailed: "Pobieranie nie powiodło się",
       },
     },
+    reader: {
+      header: {
+        back: "Wróć do dokumentów",
+      },
+      loading: "Ładowanie dokumentu...",
+      loadError: {
+        title: "Nie udało się otworzyć dokumentu",
+        description:
+          "Dokument nie istnieje albo nie masz dostępu do jego zawartości.",
+        retry: "Spróbuj ponownie",
+      },
+      processing: {
+        title: "Dokument jest jeszcze przetwarzany",
+        description:
+          "Nagranie i dane synchronizacji nie są jeszcze gotowe. Możesz sprawdzić bieżący etap na stronie zadań.",
+        jobs: "Przejdź do zadań",
+        documents: "Wróć do dokumentów",
+      },
+      text: {
+        title: "Treść dokumentu",
+        description:
+          "Czytaj tekst i wybierz zdanie, aby przejść do odpowiedniego miejsca w nagraniu.",
+        loading: "Ładowanie tekstu źródłowego...",
+        unavailableTitle: "Brak pliku źródłowego",
+        unavailableDescription:
+          "Nie udało się pobrać oryginalnego tekstu. Pozostałe gotowe pliki nadal możesz pobrać.",
+        emptyTitle: "Dokument nie zawiera tekstu",
+        emptyDescription:
+          "Z pliku źródłowego nie udało się odczytać treści. Ponów generowanie albo dodaj nowy dokument.",
+        noSyncTitle: "Synchronizacja zdań jest niedostępna",
+        noSyncDescription:
+          "Tekst możesz nadal czytać i odsłuchiwać, ale wybieranie zdań oraz automatyczne podświetlanie są wyłączone.",
+        syncLoading: "Ładowanie synchronizacji zdań...",
+        currentSentence: "Aktualnie odtwarzane zdanie",
+      },
+      details: {
+        title: "Szczegóły dokumentu",
+        description:
+          "Informacje o pliku, nagraniu i ostatnim przetwarzaniu dokumentu.",
+        processingTitle: "Przetwarzanie",
+        downloadsTitle: "Pliki do pobrania",
+        downloadsDescription:
+          "Pobierz gotowe wyniki albo zachowaną treść źródłową.",
+        status: "Status",
+        created: "Utworzono",
+        updated: "Ostatnia zmiana",
+        characters: "Liczba znaków",
+        voice: "Głos",
+        model: "Model",
+        duration: "Długość nagrania",
+        unknown: "Brak danych",
+        statuses: {
+          completed: "Gotowy",
+          failed: "Niepowodzenie",
+          failedToStart: "Nie uruchomiono",
+          processing: "Przetwarzanie",
+        },
+        actions: {
+          downloadMp3: "Pobierz MP3",
+          downloadCorrected: "Pobierz poprawiony tekst",
+          downloadOriginal: "Pobierz plik źródłowy",
+          retry: "Ponów generowanie",
+          retrying: "Ponawianie...",
+        },
+        downloadError: "Nie udało się pobrać pliku.",
+        retryError: "Nie udało się ponowić generowania.",
+      },
+      menu: {
+        label: "Więcej opcji dokumentu",
+        autoHighlight: "Automatyczne podświetlanie",
+        details: "Szczegóły dokumentu",
+        downloads: "Pliki do pobrania",
+        regenerate: "Wygeneruj ponownie",
+      },
+      regenerate: {
+        title: "Wygenerować dokument ponownie?",
+        description:
+          "Powstanie nowe zadanie przetwarzania. Obecny poprawiony tekst i nagranie pozostaną dostępne, dopóki nowa próba nie zakończy się powodzeniem.",
+        warning:
+          "Nie uruchamiaj ponownego generowania, jeśli nie chcesz rozpocząć kolejnej próby przetwarzania.",
+        cancel: "Anuluj",
+        confirm: "Wygeneruj ponownie",
+      },
+      dialog: {
+        close: "Zamknij",
+      },
+      failure: {
+        mp3Title: "Nagranie MP3 nie jest dostępne",
+        mp3Description:
+          "Generowanie nagrania nie powiodło się. Możesz pobrać dostępne pliki tekstowe i ponowić próbę.",
+      },
+      highlights: {
+        label: "Podświetlaj odtwarzane zdanie",
+      },
+      player: {
+        label: "Odtwarzacz dokumentu",
+        play: "Odtwórz",
+        pause: "Wstrzymaj",
+        previous: "Poprzednie zdanie",
+        next: "Następne zdanie",
+        seek: "Pozycja nagrania",
+        speed: "Prędkość odtwarzania",
+        speedValue: "×",
+        audioError: "Nie udało się odtworzyć nagrania.",
+      },
+    },
     newDocument: {
       heading: "Nowy dokument",
       description:

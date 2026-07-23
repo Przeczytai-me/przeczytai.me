@@ -2,10 +2,11 @@ import { type NextRequest, NextResponse } from "next/server";
 import { backendFetch } from "@/lib/backend-fetch";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ readingId: string }> },
 ) {
   const { readingId } = await params;
+  const range = req.headers.get("range");
   const res = await backendFetch(`/api/v1/readings/${readingId}/recording`, {
     redirect: "manual",
   });
@@ -14,7 +15,14 @@ export async function GET(
   // browser receives a same-origin audio response with stable download headers.
   if (res.status >= 300 && res.status < 400) {
     const location = res.headers.get("location");
-    if (location) return audioResponse(await fetch(location), readingId);
+    if (location) {
+      return audioResponse(
+        await fetch(location, {
+          headers: range ? { Range: range } : undefined,
+        }),
+        readingId,
+      );
+    }
   }
 
   if (!res.ok) {
@@ -26,7 +34,14 @@ export async function GET(
   if (contentType.includes("application/json")) {
     const data = await res.json();
     const location = data?.url ?? data?.download_url ?? data?.presigned_url;
-    if (location) return audioResponse(await fetch(location), readingId);
+    if (location) {
+      return audioResponse(
+        await fetch(location, {
+          headers: range ? { Range: range } : undefined,
+        }),
+        readingId,
+      );
+    }
     return NextResponse.json(data);
   }
 
@@ -42,9 +57,12 @@ async function audioResponse(res: Response, readingId: string) {
   const headers = new Headers({
     "Content-Type": res.headers.get("content-type") || "audio/mpeg",
     "Content-Disposition": `attachment; filename="${readingId}-recording.mp3"`,
+    "Accept-Ranges": res.headers.get("accept-ranges") || "bytes",
   });
   const contentLength = res.headers.get("content-length");
   if (contentLength) headers.set("Content-Length", contentLength);
+  const contentRange = res.headers.get("content-range");
+  if (contentRange) headers.set("Content-Range", contentRange);
 
-  return new NextResponse(res.body, { headers });
+  return new NextResponse(res.body, { headers, status: res.status });
 }

@@ -1,34 +1,40 @@
 import type { TimingMap, TtsOptions, UserSettings } from "./types";
 
-export const mockOriginalText = [
+const mockDocumentSegments = [
   "PrzeczytAI.me przygotowuje polskie dokumenty do wygodnego słuchania.",
   "Najpierw porządkuje tekst, a następnie tworzy nagranie.",
   "Użytkownik może wrócić do dokumentu, pobrać pliki i ponowić przetwarzanie.",
-].join("\n\n");
-
-export const mockTimingMapSegments: TimingMap["segments"] = [
-  {
-    id: "segment-1",
-    text: "PrzeczytAI.me przygotowuje polskie dokumenty do wygodnego słuchania.",
-    paragraph_index: 0,
-    start_ms: 0,
-    end_ms: 4_600,
-  },
-  {
-    id: "segment-2",
-    text: "Najpierw porządkuje tekst, a następnie tworzy nagranie.",
-    paragraph_index: 1,
-    start_ms: 4_600,
-    end_ms: 8_500,
-  },
-  {
-    id: "segment-3",
-    text: "Użytkownik może wrócić do dokumentu, pobrać pliki i ponowić przetwarzanie.",
-    paragraph_index: 2,
-    start_ms: 8_500,
-    end_ms: 14_200,
-  },
+  "W czytniku dokumentu tekst pozostaje dostępny przez cały czas odtwarzania.",
+  "Aktualnie czytane zdanie jest wyraźnie podświetlane i automatycznie przesuwane do środka widoku.",
+  "Przyciski poprzedniego i następnego zdania pozwalają szybko poruszać się po dłuższym materiale.",
+  "Menu dokumentu udostępnia szczegóły, gotowe pliki oraz bezpieczną opcję ponownego generowania.",
+  "Nagranie można zatrzymać w dowolnym momencie, zmienić jego prędkość albo wybrać pozycję na osi czasu.",
+  "Jeżeli dane synchronizacji nie są dostępne, aplikacja pokazuje tekst bez zgadywania czasu poszczególnych zdań.",
+  "Po zakończeniu słuchania wszystkie wyniki pozostają dostępne w prywatnej przestrzeni dokumentów.",
+  "Każde zdanie ma własny przedział czasu, dzięki czemu podświetlenie podąża za głosem bez opóźnień.",
+  "Dłuższy przykładowy dokument pomaga także sprawdzić zachowanie czytnika na mniejszych ekranach.",
+  "Przewijanie odbywa się wyłącznie wewnątrz pola tekstowego, więc nagłówek i odtwarzacz pozostają na miejscu.",
+  "Automatyczne przewijanie można wyłączyć w menu, jeżeli użytkownik chce samodzielnie przeglądać tekst.",
+  "Po ponownym włączeniu funkcji aktywne zdanie wraca do widocznego obszaru podczas dalszego odtwarzania.",
+  "Ten fragment kończy dane testowe i ułatwia sprawdzenie zachowania czytnika blisko końca dokumentu.",
 ];
+
+export const mockOriginalText = mockDocumentSegments.join("\n\n");
+
+const mockRecordingDurationMs = 3_500;
+
+export const mockTimingMapSegments: TimingMap["segments"] =
+  mockDocumentSegments.map((text, index) => ({
+    id: `segment-${index + 1}`,
+    text,
+    paragraph_index: index,
+    start_ms: Math.round(
+      (index * mockRecordingDurationMs) / mockDocumentSegments.length,
+    ),
+    end_ms: Math.round(
+      ((index + 1) * mockRecordingDurationMs) / mockDocumentSegments.length,
+    ),
+  }));
 
 export const mockTtsOptions: TtsOptions = {
   vendors: [{ id: "edge-tts", label: "Edge TTS" }],
