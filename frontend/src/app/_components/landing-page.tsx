@@ -13,6 +13,7 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { dictionary } from "@/i18n/dictionaries";
 import { cn } from "@/lib/utils";
+import { PublicFooter } from "./public-footer";
 
 const capabilities: Array<{
   copy: (typeof dictionary.landing.capabilities.items)[keyof typeof dictionary.landing.capabilities.items];
@@ -57,7 +58,7 @@ export const LandingPage = ({ isSignedIn }: LandingPageProps) => {
         <SupportedInputsSection />
       </div>
 
-      <LandingFooter />
+      <PublicFooter />
     </main>
   );
 };
@@ -241,26 +242,5 @@ const SupportedInputItem = ({
           : t.supportedInputs.plannedLabel}
       </span>
     </span>
-  );
-};
-
-const LandingFooter = () => {
-  const t = dictionary.landing;
-
-  return (
-    <footer className="w-full border-border border-t">
-      <div className="mx-auto flex w-full flex-col gap-2 px-5 py-6 text-muted-foreground text-sm sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-10">
-        <p>{t.footer.copyright}</p>
-        <p>
-          {t.footer.contactLabel}{" "}
-          <a
-            href={`mailto:${t.footer.contactEmail}`}
-            className="text-foreground underline-offset-4 hover:underline"
-          >
-            {t.footer.contactEmail}
-          </a>
-        </p>
-      </div>
-    </footer>
   );
 };
