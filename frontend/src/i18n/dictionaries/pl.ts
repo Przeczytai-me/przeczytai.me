@@ -79,6 +79,9 @@ export const pl = {
       copyright: "© 2026 PrzeczytAI.me",
       contactLabel: "Kontakt:",
       contactEmail: "informaks23@gmail.com",
+      navigationLabel: "Informacje prawne",
+      privacy: "Prywatność",
+      terms: "Warunki korzystania",
     },
   },
   auth: {
@@ -105,6 +108,131 @@ export const pl = {
       "On this page(table of contents)": "Na tej stronie",
       "Open Sidebar(sidebar)(aria-label)": "Otwórz panel boczny",
       "Previous Page(pagination)": "Poprzednia strona",
+    },
+  },
+  legal: {
+    common: {
+      productName: "PrzeczytAI.me",
+      navigationLabel: "Nawigacja publiczna",
+      backToHome: "Wróć na stronę główną",
+      helpCenter: "Centrum pomocy",
+      signIn: "Zaloguj się",
+      onThisPage: "Na tej stronie",
+      draftLabel: "Wersja robocza",
+      draftTitle: "Treść oczekuje na zatwierdzenie",
+      draftDescription:
+        "Ta strona opisuje aktualne założenia produktu. Nie jest jeszcze ostatecznym dokumentem prawnym.",
+      updatedLabel: "Stan informacji",
+      updatedAt: "27 lipca 2026",
+      contactTitle: "Pytania o dane lub zasady korzystania",
+      contactDescription:
+        "Napisz do nas, jeśli chcesz uzyskać informacje o swoich danych, zgłosić prośbę o ich usunięcie albo wyjaśnić zasady korzystania z usługi.",
+      contactAction: "Napisz do nas",
+    },
+    privacy: {
+      metadata: {
+        title: "Prywatność | PrzeczytAI.me",
+        description:
+          "Informacje o przetwarzaniu dokumentów, przechowywaniu danych i planowanej retencji w PrzeczytAI.me.",
+      },
+      eyebrow: "Prywatność",
+      title: "Jak PrzeczytAI.me pracuje z Twoimi danymi",
+      description:
+        "Przesłane dokumenty służą do przygotowania uporządkowanego tekstu i nagrania. Poniżej wyjaśniamy, jakie informacje są potrzebne do działania produktu i które zasady wymagają jeszcze formalnego zatwierdzenia.",
+      sections: [
+        {
+          id: "zakres-danych",
+          title: "Jakie dane wykorzystujemy",
+          paragraphs: [
+            "Do obsługi konta używamy informacji potrzebnych do logowania, takich jak adres e-mail i identyfikator użytkownika. Uwierzytelnianie obsługuje Clerk.",
+            "Podczas tworzenia nagrania przetwarzamy treść przesłanego pliku, jego podstawowe informacje oraz utworzone wyniki: poprawiony tekst, nagranie i dane potrzebne do synchronizacji odtwarzania.",
+          ],
+        },
+        {
+          id: "cel-przetwarzania",
+          title: "Po co przetwarzamy dokumenty",
+          paragraphs: [
+            "Treść dokumentu jest używana do uporządkowania tekstu, zastosowania podanych odczytów skrótów, wygenerowania narracji i udostępnienia plików do pobrania.",
+            "Nie wykorzystujemy treści dokumentu do określania limitów subskrypcji ani innych zasad rozliczeń, ponieważ te zasady nie zostały jeszcze ustalone dla wersji 1.",
+          ],
+        },
+        {
+          id: "dostep-i-dostawcy",
+          title: "Dostęp i zewnętrzni dostawcy",
+          paragraphs: [
+            "Dokumenty i wyniki są przypisane do zalogowanego użytkownika. Chronione operacje aplikacji wymagają aktywnej sesji, a pliki nie są udostępniane jako publiczne zasoby.",
+            "Aby utworzyć narrację, treść może zostać przekazana dostawcy syntezy mowy wybranemu dla danego zadania. Zakres dodatkowego przetwarzania AI zależy od konfiguracji produktu i zostanie doprecyzowany w zatwierdzonej polityce.",
+          ],
+        },
+        {
+          id: "przechowywanie",
+          title: "Przechowywanie i planowana retencja",
+          paragraphs: [
+            "Założenie wersji 1 przewiduje usuwanie plików źródłowych, przetworzonego tekstu i nagrań po 365 dniach bez aktywności dotyczącej dokumentu.",
+            "Automatyczne egzekwowanie tego okresu nie zostało jeszcze potwierdzone w środowisku produkcyjnym. Do czasu wdrożenia i zatwierdzenia tej zasady traktuj 365 dni jako planowany okres retencji, a nie gwarantowany termin automatycznego usunięcia.",
+          ],
+        },
+        {
+          id: "prawa-i-usuniecie",
+          title: "Dostęp do danych i usunięcie",
+          paragraphs: [
+            "Możesz pobierać swoje dostępne pliki z poziomu aplikacji. Usunięcie wszystkich danych konta nie ma jeszcze kompletnej samoobsługowej ścieżki.",
+            "Aby poprosić o usunięcie konta i powiązanych danych albo uzyskać informacje o ich przetwarzaniu, skontaktuj się z zespołem PrzeczytAI.me.",
+          ],
+        },
+      ],
+    },
+    terms: {
+      metadata: {
+        title: "Warunki korzystania | PrzeczytAI.me",
+        description:
+          "Robocza informacja o planowanym zakresie warunków korzystania z PrzeczytAI.me.",
+      },
+      eyebrow: "Warunki korzystania",
+      title: "Zasady korzystania z PrzeczytAI.me",
+      description:
+        "Ostateczny regulamin nie został jeszcze zatwierdzony. Ta strona porządkuje zakres zasad, które muszą zostać przyjęte przed publicznym uruchomieniem usługi.",
+      sections: [
+        {
+          id: "status-dokumentu",
+          title: "Status tej strony",
+          paragraphs: [
+            "Poniższe informacje są opisem planowanego działania produktu, a nie wiążącym regulaminem świadczenia usług. Finalna treść zostanie opublikowana po zakończeniu przeglądu prawnego i produktowego.",
+          ],
+        },
+        {
+          id: "zakres-uslugi",
+          title: "Planowany zakres usługi",
+          paragraphs: [
+            "PrzeczytAI.me ma umożliwiać przesyłanie obsługiwanych dokumentów, porządkowanie ich treści, generowanie narracji oraz pobieranie dostępnych wyników.",
+            "Szczegóły planów, płatności, limitów dokumentów, limitów ponawiania i gwarantowanej dostępności nie są jeszcze określone i nie stanowią części tej wersji roboczej.",
+          ],
+        },
+        {
+          id: "odpowiedzialnosc-uzytkownika",
+          title: "Odpowiedzialność użytkownika",
+          paragraphs: [
+            "Przed publikacją regulamin powinien określić, że użytkownik odpowiada za prawo do przesyłania i przetwarzania treści oraz za bezpieczeństwo swojego konta.",
+            "Szczegółowe zasady dotyczące treści zabronionych, praw osób trzecich i niedozwolonego użycia wymagają zatwierdzenia w osobnej polityce bezpiecznego korzystania.",
+          ],
+        },
+        {
+          id: "wyniki-i-dostawcy",
+          title: "Wyniki przetwarzania i dostawcy",
+          paragraphs: [
+            "Wyniki automatycznego porządkowania tekstu i syntezy mowy mogą wymagać sprawdzenia przez użytkownika. Produkt nie powinien obiecywać bezbłędnego odczytu każdego dokumentu.",
+            "Do wygenerowania nagrania usługa może korzystać z zewnętrznych dostawców syntezy mowy. Ich ostateczna lista i związane z nią zasady przetwarzania zostaną opisane w zatwierdzonej dokumentacji.",
+          ],
+        },
+        {
+          id: "zmiany-i-kontakt",
+          title: "Zmiany i kontakt",
+          paragraphs: [
+            "Przed rozpoczęciem świadczenia usługi na podstawie regulaminu użytkownicy powinni otrzymać finalną treść, datę wejścia w życie i informację o istotnych zmianach.",
+            "Do tego czasu pytania o planowane zasady korzystania można kierować bezpośrednio do zespołu PrzeczytAI.me.",
+          ],
+        },
+      ],
     },
   },
   app: {
