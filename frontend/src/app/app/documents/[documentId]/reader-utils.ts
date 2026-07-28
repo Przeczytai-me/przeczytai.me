@@ -15,19 +15,3 @@ export const getCurrentSegmentIndex = (
   }
   return -1;
 };
-
-export const getReadingTitle = (
-  metadata: Record<string, unknown>,
-  fallback: string,
-) => {
-  for (const key of ["title", "file_name", "filename"]) {
-    const value = metadata[key];
-    if (typeof value === "string" && value.trim()) return value;
-  }
-  return fallback;
-};
-
-export const getMetadataDurationMs = (metadata: Record<string, unknown>) => {
-  const value = metadata.duration_ms;
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-};

@@ -10,17 +10,18 @@ import {
   getTimingMap,
   retryReading,
 } from "@/lib/api";
+import {
+  getMetadataDurationMs,
+  getReadingTitle,
+  ReadingStatus,
+} from "@/lib/reading";
 import { AudioPlayer } from "./_components/audio-player";
 import { ReaderActionsMenu } from "./_components/reader-actions-menu";
 import { ReaderHeader } from "./_components/reader-header";
 import { ReaderStatusPage } from "./_components/reader-status-page";
 import { ReadingTextPanel } from "./_components/reading-text-panel";
 import { RecordingUnavailableAlert } from "./_components/recording-unavailable-alert";
-import {
-  getCurrentSegmentIndex,
-  getMetadataDurationMs,
-  getReadingTitle,
-} from "./reader-utils";
+import { getCurrentSegmentIndex } from "./reader-utils";
 
 const copy = dictionary.app.reader;
 
@@ -40,9 +41,10 @@ export const DocumentReader = ({ documentId }: { documentId: string }) => {
     queryFn: () => getReading(documentId),
   });
   const reading = readingQuery.data;
-  const isCompleted = reading?.status === "completed";
+  const isCompleted = reading?.status === ReadingStatus.completed;
   const isFailed =
-    reading?.status === "failed" || reading?.status === "failed_to_start";
+    reading?.status === ReadingStatus.failed ||
+    reading?.status === ReadingStatus.failedToStart;
 
   const originalTextQuery = useQuery({
     queryKey: ["reading", documentId, "original-text"],

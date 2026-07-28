@@ -68,7 +68,7 @@ export const AppShell = ({ children }: AppShellProps) => {
 
       <div
         className={cn(
-          "flex flex-col transition-[padding-left]",
+          "min-w-0 flex flex-col transition-[padding-left]",
           isDocumentReader ? "h-dvh min-h-0" : "min-h-screen",
           isCollapsed ? "pl-16" : "pl-52",
         )}
@@ -77,7 +77,7 @@ export const AppShell = ({ children }: AppShellProps) => {
 
         <main
           className={cn(
-            "flex-1 px-4 lg:px-8",
+            "min-w-0 flex-1 px-4 lg:px-8",
             isDocumentReader
               ? "min-h-0 overflow-hidden py-4"
               : "overflow-auto py-6",
