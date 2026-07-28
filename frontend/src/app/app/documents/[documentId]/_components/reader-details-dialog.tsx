@@ -1,4 +1,5 @@
 import { CalendarClock, FileAudio, FileText, Sparkles } from "lucide-react";
+import { ReadingStatusBadge } from "@/app/app/_components/reading-status-badge";
 import {
   DialogContent,
   DialogDescription,
@@ -11,7 +12,6 @@ import { formatPolishDateTime } from "@/lib/date-time";
 import { formatDurationMs } from "@/lib/duration";
 import { formatPolishCount } from "@/lib/pluralize";
 import { ReaderDetailRow } from "./reader-detail-row";
-import { ReaderStatusBadge } from "./reader-status-badge";
 
 const copy = dictionary.app.reader;
 
@@ -33,7 +33,7 @@ export const ReaderDetailsDialog = ({
       <ReaderDetailRow
         icon={Sparkles}
         label={copy.details.status}
-        value={<ReaderStatusBadge status={reading.status} />}
+        value={<ReadingStatusBadge status={reading.status} />}
       />
       <ReaderDetailRow
         icon={FileText}

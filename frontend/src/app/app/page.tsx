@@ -1,7 +1,7 @@
-import { ReadingsDashboard } from "./readings-dashboard";
+import { DocumentsWorkspace } from "./_components/documents-workspace";
 
 const AppPage = async () => {
-  return <ReadingsDashboard />;
+  return <DocumentsWorkspace />;
 };
 
 export default AppPage;
