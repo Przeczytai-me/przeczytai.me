@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from app.auth import CurrentUser, require_admin
 from app.config import Settings, get_settings
 from app.costs import USD_MICROS, estimate_cost, usage_from_text
+from app.errors import ApiException
 from app.models import ReadingCreateRequest
 from app.pricing import PRICE_BOOK_VERSION, get_prices
 from app.repositories.readings import ReadingRepository
@@ -16,6 +17,7 @@ from app.tts import TTS_PROVIDERS
 
 router = APIRouter(prefix="/api/v1/costs", tags=["costs"])
 RUN_RESULT_LIMIT = 1_000
+MONTH_ROLLUP_LIMIT = 1_000
 COMPONENTS = ("tts", "llm", "compute", "storage", "platform")
 BUDGET_THRESHOLDS = [50, 80, 95]
 
@@ -29,7 +31,7 @@ def _month_from_item(item: dict) -> str:
 
 
 def _user_ref(user_id: str) -> str:
-    return hashlib.sha256(user_id.encode()).hexdigest()[:8]
+    return hashlib.sha256(user_id.encode()).hexdigest()[:16]
 
 
 def _components(item: dict) -> dict[str, float]:
@@ -97,7 +99,8 @@ async def get_costs(
     now = datetime.now(UTC)
     current_month = now.strftime("%Y-%m")
     selected_months = _month_keys(months, now)
-    month_items = repo.get_system_month_costs(months)
+    all_month_items = repo.get_system_month_costs(MONTH_ROLLUP_LIMIT)
+    month_items = all_month_items[:months]
     user_items = repo.list_user_month_costs(current_month)
     run_items = repo.list_run_costs(RUN_RESULT_LIMIT)
     costed_runs = [
@@ -107,12 +110,12 @@ async def get_costs(
         and str(item.get("sk", "")).split("#")[1] in selected_months
     ]
 
-    by_month = {_month_from_item(item): item for item in month_items}
+    by_month = {_month_from_item(item): item for item in all_month_items}
     current = by_month.get(current_month, {})
     previous_date = datetime(now.year - (now.month == 1), (now.month - 2) % 12 + 1, 1, tzinfo=UTC)
     previous = by_month.get(previous_date.strftime("%Y-%m"), {})
-    total_micros = sum(int(item.get("total_usd_micros", 0)) for item in month_items)
-    total_runs = sum(int(item.get("runs", 0)) for item in month_items)
+    total_micros = sum(int(item.get("total_usd_micros", 0)) for item in all_month_items)
+    total_runs = sum(int(item.get("runs", 0)) for item in all_month_items)
     month_micros = int(current.get("total_usd_micros", 0))
     month_runs = int(current.get("runs", 0))
     month_chars = int(current.get("chars", 0))
@@ -122,7 +125,12 @@ async def get_costs(
     vendors: dict[tuple[str, str], dict[str, int]] = defaultdict(
         lambda: {"total_usd_micros": 0, "runs": 0, "chars": 0}
     )
-    for item in costed_runs:
+    current_month_runs = [
+        item
+        for item in costed_runs
+        if str(item.get("sk", "")).startswith(f"COSTRUN#{current_month}#")
+    ]
+    for item in current_month_runs:
         day = str(item.get("created_at", ""))[:10]
         vendor = str(item.get("vendor", "unknown"))
         voice = str(item.get("voice", "unknown"))
@@ -211,7 +219,9 @@ async def estimate_costs(
     _: CurrentUser = Depends(require_admin),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    original_text = request.original_text
+    original_text = request.original_text.strip()
+    if not original_text:
+        raise ApiException("validation_error", "Original text must not be empty", 422)
     prices = get_prices(settings.cost_price_overrides)
     estimates = []
     chunk_count = 0

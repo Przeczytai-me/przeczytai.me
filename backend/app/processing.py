@@ -49,6 +49,7 @@ async def process_reading(
     repo: ReadingRepository | None = None,
     synthesize=synthesize_to_file,
 ) -> dict[str, str]:
+    invocation_started = time.perf_counter()
     settings = settings or get_settings()
     storage = storage or FileStorage(settings.files_bucket_name)
     repo = repo or ReadingRepository(settings.readings_table_name, None)
@@ -152,6 +153,7 @@ async def process_reading(
         }
         cost: CostBreakdown | None = None
         try:
+            invocation_ms = round((time.perf_counter() - invocation_started) * 1000)
             usage = RunUsage(
                 chars_synthesized=len(corrected),
                 chunks=len(chunks),
@@ -168,6 +170,7 @@ async def process_reading(
                     "normalize": normalize_ms,
                     "synthesize": synthesize_ms,
                     "merge": merge_ms,
+                    "overhead": max(0, invocation_ms - normalize_ms - synthesize_ms - merge_ms),
                 },
                 lambda_memory_mb=int(
                     os.environ.get("AWS_LAMBDA_FUNCTION_MEMORY_SIZE") or settings.lambda_memory_mb
@@ -228,13 +231,25 @@ async def process_reading(
                     },
                 )
                 try:
-                    repo.add_cost_rollup(
-                        owner_user_id,
-                        datetime.now(UTC).strftime("%Y-%m"),
-                        cost,
-                        reading_id=reading_id,
-                        voice=selection.voice,
-                    )
+                    try:
+                        repo.add_cost_rollup(
+                            owner_user_id,
+                            datetime.now(UTC).strftime("%Y-%m"),
+                            cost,
+                            reading_id=reading_id,
+                            voice=selection.voice,
+                            run_key=str(job_id or reading_id),
+                        )
+                    except TypeError as exc:
+                        if "run_key" not in str(exc):
+                            raise
+                        repo.add_cost_rollup(
+                            owner_user_id,
+                            datetime.now(UTC).strftime("%Y-%m"),
+                            cost,
+                            reading_id=reading_id,
+                            voice=selection.voice,
+                        )
                 except Exception:
                     logger.exception(
                         "reading cost rollup failed",

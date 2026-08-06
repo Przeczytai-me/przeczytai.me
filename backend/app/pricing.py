@@ -1,4 +1,5 @@
 import json
+import math
 
 
 PRICE_BOOK_VERSION = "2026-08-05"
@@ -23,8 +24,16 @@ def get_prices(overrides_json: str | None = None) -> dict[str, float]:
         overrides = json.loads(overrides_json)
         if not isinstance(overrides, dict):
             return DEFAULT_PRICES.copy()
-        return DEFAULT_PRICES | {
-            key: float(value) for key, value in overrides.items() if key in DEFAULT_PRICES
-        }
+        prices = DEFAULT_PRICES.copy()
+        for key, value in overrides.items():
+            if key not in DEFAULT_PRICES:
+                continue
+            try:
+                price = float(value)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if math.isfinite(price) and price >= 0:
+                prices[key] = price
+        return prices
     except (TypeError, ValueError):
         return DEFAULT_PRICES.copy()

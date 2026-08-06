@@ -7,6 +7,7 @@ from app.splitting import split_text
 CHARS_PER_MINUTE = 900
 ASSUMED_BITRATE_BPS = 48_000
 USD_MICROS = 1_000_000
+S3_PUTS_PER_RUN = 4
 
 
 @dataclass(frozen=True)
@@ -42,9 +43,7 @@ def _usd_micros(dollars: float) -> int:
     return round(dollars * USD_MICROS)
 
 
-def estimate_cost(
-    usage: RunUsage, prices: dict[str, float] | None = None
-) -> CostBreakdown:
+def estimate_cost(usage: RunUsage, prices: dict[str, float] | None = None) -> CostBreakdown:
     prices = prices or DEFAULT_PRICES
     tts = _usd_micros(
         usage.chars_synthesized
@@ -56,16 +55,12 @@ def estimate_cost(
         + usage.llm_output_tokens / 1_000_000 * prices["llm.output"]
     )
     compute = _usd_micros(
-        usage.lambda_memory_mb
-        / 1024
-        * usage.compute_ms
-        / 1000
-        * prices["lambda.gb_second"]
+        usage.lambda_memory_mb / 1024 * usage.compute_ms / 1000 * prices["lambda.gb_second"]
         + prices["lambda.request"]
     )
     storage = _usd_micros(
         usage.stored_bytes / 1_000_000_000 * prices["s3.gb_month"]
-        + (usage.chunks + 4) / 1000 * prices["s3.per_1k_put"]
+        + S3_PUTS_PER_RUN / 1000 * prices["s3.per_1k_put"]
     )
     platform = _usd_micros(prices["platform.per_run"])
     components = (tts, llm, compute, storage, platform)

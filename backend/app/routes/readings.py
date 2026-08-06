@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -19,6 +20,7 @@ from app.models import (
     TimingMapResponse,
 )
 from app.pricing import get_prices
+from app.normalization import apply_abbreviation_readings, normalize
 from app.repositories.readings import ProcessingStartError, ReadingRepository, RetryConflictError
 from app.storage import FileStorage, StorageError, StorageObjectNotFoundError
 from app.tts import (
@@ -32,6 +34,7 @@ from app.tts import (
 )
 
 router = APIRouter(prefix="/api/v1/readings", tags=["readings"])
+logger = logging.getLogger(__name__)
 REQUIRED_READING_FIELDS = {
     "reading_id",
     "original_text_key",
@@ -168,19 +171,19 @@ def _store_original_text(
     return original_text_key
 
 
-@router.post("", response_model=Reading, status_code=status.HTTP_202_ACCEPTED)
-async def create_reading(
-    request: ReadingCreateRequest,
-    user: CurrentUser = Depends(get_current_user),
-    repo: ReadingRepository = Depends(get_reading_repository),
-    storage: FileStorage = Depends(get_file_storage),
-    settings: Settings = Depends(get_settings),
-) -> Reading:
-    original_text = _normalize_original_text(request.original_text, settings.max_text_chars)
-    abbreviation_readings = _normalize_abbreviation_readings(request.abbreviation_readings)
-    selection = _resolve_create_tts_selection(request, original_text, settings)
+def _enforce_cost_limit(
+    original_text: str,
+    abbreviation_readings: list[dict[str, str]] | None,
+    selection: TtsSelection,
+    settings: Settings,
+) -> None:
+    synthesized_text = apply_abbreviation_readings(original_text, abbreviation_readings)
+    try:
+        synthesized_text = normalize(synthesized_text)
+    except Exception:
+        logger.exception("Text normalization failed during cost estimation")
     usage = usage_from_text(
-        original_text,
+        synthesized_text,
         selection.vendor,
         max_chunk_chars=settings.max_chunk_chars,
         lambda_memory_mb=settings.lambda_memory_mb,
@@ -193,6 +196,20 @@ async def create_reading(
             "Estimated reading cost exceeds the per-run limit",
             413,
         )
+
+
+@router.post("", response_model=Reading, status_code=status.HTTP_202_ACCEPTED)
+async def create_reading(
+    request: ReadingCreateRequest,
+    user: CurrentUser = Depends(get_current_user),
+    repo: ReadingRepository = Depends(get_reading_repository),
+    storage: FileStorage = Depends(get_file_storage),
+    settings: Settings = Depends(get_settings),
+) -> Reading:
+    original_text = _normalize_original_text(request.original_text, settings.max_text_chars)
+    abbreviation_readings = _normalize_abbreviation_readings(request.abbreviation_readings)
+    selection = _resolve_create_tts_selection(request, original_text, settings)
+    _enforce_cost_limit(original_text, abbreviation_readings, selection, settings)
     reading_id = repo.next_id()
     original_text_key = _store_original_text(
         owner_user_id=user.user_id,
@@ -289,8 +306,25 @@ async def retry_reading(
     reading_id: str,
     user: CurrentUser = Depends(get_current_user),
     repo: ReadingRepository = Depends(get_reading_repository),
+    storage: FileStorage = Depends(get_file_storage),
+    settings: Settings = Depends(get_settings),
 ) -> Job:
     item = _get_user_reading(user.user_id, reading_id, repo)
+    try:
+        original_text = storage.get_text(str(item["original_text_key"]))
+    except Exception:
+        logger.exception(
+            "Failed to load original text for retry cost estimation",
+            extra={"reading_id": reading_id, "owner_user_id": user.user_id},
+        )
+    else:
+        selection = resolve_tts_selection(item.get("vendor"), item.get("voice"))
+        _enforce_cost_limit(
+            original_text,
+            item.get("abbreviation_readings"),
+            selection,
+            settings,
+        )
     try:
         attempt = repo.begin_retry(user.user_id, reading_id)
     except RetryConflictError as exc:

@@ -321,6 +321,7 @@ class ReadingRepository:
         *,
         reading_id: str,
         voice: str,
+        run_key: str,
     ) -> None:
         now = _now()
         usage = cost.usage
@@ -335,6 +336,39 @@ class ReadingRepository:
             "audio_ms": usage.audio_ms,
             "runs": 1,
         }
+        try:
+            self.table.put_item(
+                Item={
+                    "pk": "SYSTEM",
+                    "sk": f"COSTRUN#{month}#{run_key}",
+                    "reading_id": reading_id,
+                    "owner_user_id": owner_user_id,
+                    "vendor": str(usage.vendor),
+                    "voice": voice,
+                    "total_usd_micros": cost.total_usd_micros,
+                    "tts_usd_micros": cost.tts_usd_micros,
+                    "llm_usd_micros": cost.llm_usd_micros,
+                    "compute_usd_micros": cost.compute_usd_micros,
+                    "storage_usd_micros": cost.storage_usd_micros,
+                    "platform_usd_micros": cost.platform_usd_micros,
+                    "chars": usage.chars_synthesized,
+                    "audio_ms": usage.audio_ms,
+                    "chunks": usage.chunks,
+                    "stored_bytes": usage.stored_bytes,
+                    "lambda_memory_mb": usage.lambda_memory_mb,
+                    "compute_ms_by_stage": usage.compute_ms_by_stage,
+                    "llm_input_tokens": usage.llm_input_tokens,
+                    "llm_output_tokens": usage.llm_output_tokens,
+                    "price_book_version": cost.price_book_version,
+                    "created_at": now,
+                },
+                ConditionExpression="attribute_not_exists(sk)",
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return
+            raise
+
         update_expression = "SET updated_at = :updated_at ADD " + ", ".join(
             f"{field} :{field}" for field in COST_COUNTERS
         )
@@ -345,33 +379,6 @@ class ReadingRepository:
                 UpdateExpression=update_expression,
                 ExpressionAttributeValues=values,
             )
-
-        self.table.put_item(
-            Item={
-                "pk": "SYSTEM",
-                "sk": f"COSTRUN#{month}#{self.next_id()}",
-                "reading_id": reading_id,
-                "owner_user_id": owner_user_id,
-                "vendor": str(usage.vendor),
-                "voice": voice,
-                "total_usd_micros": cost.total_usd_micros,
-                "tts_usd_micros": cost.tts_usd_micros,
-                "llm_usd_micros": cost.llm_usd_micros,
-                "compute_usd_micros": cost.compute_usd_micros,
-                "storage_usd_micros": cost.storage_usd_micros,
-                "platform_usd_micros": cost.platform_usd_micros,
-                "chars": usage.chars_synthesized,
-                "audio_ms": usage.audio_ms,
-                "chunks": usage.chunks,
-                "stored_bytes": usage.stored_bytes,
-                "lambda_memory_mb": usage.lambda_memory_mb,
-                "compute_ms_by_stage": usage.compute_ms_by_stage,
-                "llm_input_tokens": getattr(usage, "llm_input_tokens", 0),
-                "llm_output_tokens": getattr(usage, "llm_output_tokens", 0),
-                "price_book_version": cost.price_book_version,
-                "created_at": now,
-            }
-        )
 
     def get_user_month_cost(self, owner_user_id: str, month: str) -> dict:
         response = self.table.get_item(

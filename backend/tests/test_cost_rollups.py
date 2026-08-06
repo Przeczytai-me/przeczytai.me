@@ -1,4 +1,3 @@
-import inspect
 import re
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -87,6 +86,8 @@ USAGE = SimpleNamespace(
     lambda_memory_mb=256,
     vendor="openai",
     compute_ms_by_stage={"normalize": 1, "synthesize": 90, "merge": 10},
+    llm_input_tokens=0,
+    llm_output_tokens=0,
 )
 COST = SimpleNamespace(
     total_usd_micros=EXPECTED_COUNTERS["total_usd_micros"],
@@ -101,20 +102,14 @@ COST = SimpleNamespace(
 
 
 def add_rollup(table: FakeTable, run_key: str = "job-1") -> None:
-    repository = make_repository(table)
-    if "run_key" in inspect.signature(repository.add_cost_rollup).parameters:
-        repository.add_cost_rollup(
-            "user-1",
-            "2026-08",
-            COST,
-            reading_id="reading-1",
-            voice="alloy",
-            run_key=run_key,
-        )
-    else:
-        repository.add_cost_rollup(
-            "user-1", "2026-08", COST, reading_id="reading-1", voice="alloy"
-        )
+    make_repository(table).add_cost_rollup(
+        "user-1",
+        "2026-08",
+        COST,
+        reading_id="reading-1",
+        voice="alloy",
+        run_key=run_key,
+    )
 
 
 def test_add_cost_rollup_writes_month_user_and_run_records() -> None:
