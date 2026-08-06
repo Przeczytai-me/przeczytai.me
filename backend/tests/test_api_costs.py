@@ -53,10 +53,6 @@ class FakeCostRepo(FakeRepo):
     def get_system_month_costs(self, months: int) -> list[dict]:
         return self.system_costs[:months]
 
-    def get_user_month_cost(self, owner_user_id: str, month: str) -> dict:
-        suffix = f"COSTUSER#{month}#{owner_user_id}"
-        return next((item for item in self.user_costs if item["sk"] == suffix), {})
-
     def list_user_month_costs(self, month: str) -> list[dict]:
         return [item for item in self.user_costs if f"COSTUSER#{month}#" in item["sk"]]
 
@@ -313,7 +309,14 @@ def test_reading_endpoints_never_leak_cost_fields() -> None:
             "price_book_version": "2026-08-05",
             # metadata IS returned to users, so a cost key hiding in there is the
             # likeliest way this feature leaks. Seed one and prove it is stripped.
-            "metadata": {"voice": "Zofia", "cost_usage": {"audio_ms": 1000}},
+            "metadata": {
+                "voice": "Zofia",
+                "cost_usage": {"audio_ms": 1000},
+                # Nested and list-wrapped shapes: a top-level-only filter lets
+                # these straight through.
+                "nested": {"inner": {"cost_usd_micros": 123}},
+                "listed": [{"price_book_version": "2026-08-05"}],
+            },
         }
     )
     test_client, _, _ = client(user_id="user-1", repo=repo)

@@ -54,9 +54,9 @@ export const PriceBookPanel = ({ summary }: { summary: CostSummary }) => (
           </dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Retained storage</dt>
+          <dt className="text-muted-foreground">Storage this month</dt>
           <dd className="font-medium tabular-nums">
-            {formatUsd(summary.totals.retained_storage_usd_per_month)}/mo
+            {formatUsd(summary.totals.retained_storage_usd_per_month)}
           </dd>
         </div>
       </dl>

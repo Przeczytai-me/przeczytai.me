@@ -46,4 +46,4 @@ These settings control the internal cost model and dashboard. See
 | `ADMIN_USER_IDS` | empty | API | Comma-separated user IDs allowed to call `/api/v1/costs*`. An empty value fails closed. |
 | `LAMBDA_MEMORY_MB` | `256` | API, Processor | Memory used by pre-run compute estimates and the processor fallback when `AWS_LAMBDA_FUNCTION_MEMORY_SIZE` is absent. |
 | `LAMBDA_TIMEOUT_MS` | `600000` | API | Full processor timeout charged by the conservative pre-run compute estimate. |
-| `COST_PRICE_OVERRIDES` | unset | API | JSON object overriding recognized price keys for estimates and the creation guardrail. It does not currently affect processor-recorded post-run costs. |
+| `COST_PRICE_OVERRIDES` | unset | API + processor | JSON object overriding recognized price keys. Applies to estimates, the creation guardrail and processor-recorded post-run costs alike. Non-finite or negative values are ignored per key. |

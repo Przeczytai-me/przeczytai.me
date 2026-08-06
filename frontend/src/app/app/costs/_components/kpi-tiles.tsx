@@ -58,13 +58,7 @@ const Tile = ({
   </div>
 );
 
-export const KpiTiles = ({
-  summary,
-  months,
-}: {
-  summary: CostSummary;
-  months: number;
-}) => {
+export const KpiTiles = ({ summary }: { summary: CostSummary }) => {
   const { totals, runs } = summary;
   const monthlySeries = summary.months.map((month) => month.total_usd);
   const runSeries = summary.months.map((month) => month.runs);
@@ -87,7 +81,7 @@ export const KpiTiles = ({
         }
       />
       <Tile
-        label={`Last ${months} months`}
+        label="All time"
         value={formatUsd(totals.all_time_usd)}
         hint={`${formatCount(totals.runs_all_time)} runs`}
       />

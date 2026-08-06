@@ -73,11 +73,9 @@ export type CostRun = {
     audio_ms: number;
     stored_bytes: number;
     lambda_memory_mb: number;
-    compute_ms_by_stage: {
-      normalize: number;
-      synthesize: number;
-      merge: number;
-    };
+    // Open map on purpose: the processor emits normalize/synthesize/merge plus
+    // overhead, and legacy run records can carry an empty object.
+    compute_ms_by_stage: Record<string, number>;
   };
 };
 
@@ -146,14 +144,6 @@ async function costsFetch(
     throw new ApiError(res.status, text);
   }
   return res;
-}
-
-export async function getCosts(months?: number): Promise<CostSummary> {
-  const params = new URLSearchParams();
-  if (months !== undefined) params.set("months", String(months));
-  const query = params.size > 0 ? `?${params}` : "";
-  const res = await costsFetch(`/api/v1/costs${query}`);
-  return res.json();
 }
 
 export async function estimateCost(

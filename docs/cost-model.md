@@ -11,13 +11,14 @@ user-facing reading response model. It is available through the admin-only
 dashboard is at `/app/costs`; it is absent from application navigation, and it
 renders authentication or authorization failures as not found.
 
-There is one current exception to the stronger claim that no cost-related data
-appears in a reading response: the processor copies `cost_usage` into the
-reading's generic `metadata`, and the reading serializer returns `metadata`
-unchanged. That block contains usage measurements, not dollar amounts, but it
-can be returned by user-facing reading endpoints. The top-level
-`cost_usd_micros`, `cost_components`, `cost_usage`, and `price_book_version`
-attributes are not serialized.
+No cost-related data appears in a reading response. The top-level
+`cost_usd_micros`, `cost_components`, `cost_usage` and `price_book_version`
+attributes are never serialized, and the reading serializer recursively strips
+any key containing `cost` or `price_book` from the generic `metadata` dict
+before returning it - including nested objects and lists. That filter exists
+because the processor once did copy `cost_usage` into `metadata`, which the
+serializer returned verbatim; enforcing it at the boundary means a careless
+write cannot reopen the leak.
 
 ## Calculation
 
@@ -31,10 +32,12 @@ the sum of the five rounded components. `compute_ms` is the sum of all values in
 | TTS | `chars_synthesized / 1_000_000 * prices.get("tts.<vendor>", prices["tts.default"])` |
 | LLM | `llm_input_tokens / 1_000_000 * prices["llm.input"] + llm_output_tokens / 1_000_000 * prices["llm.output"]` |
 | Compute | `lambda_memory_mb / 1024 * compute_ms / 1000 * prices["lambda.gb_second"] + prices["lambda.request"]` |
-| Storage | `stored_bytes / 1_000_000_000 * prices["s3.gb_month"] + (chunks + 4) / 1000 * prices["s3.per_1k_put"]` |
+| Storage | `stored_bytes / 1_000_000_000 * prices["s3.gb_month"] + 4 / 1000 * prices["s3.per_1k_put"]` |
 | Platform | `prices["platform.per_run"]` |
 
-The storage formula models one month of stored bytes and `chunks + 4` PUTs. The
+The storage formula models one month of stored bytes and a flat four PUTs -
+original text, corrected text, timing map and merged recording. Chunk mp3s are
+written to `/tmp` and never uploaded, so PUTs do not scale with chunk count. The
 platform component is a flat allowance for DynamoDB and API Gateway activity.
 
 ### Worked example
@@ -52,9 +55,9 @@ output tokens; the vendor is OpenAI.
 | TTS | `2,000,000 / 1,000,000 * $15` | $30.000000 |
 | LLM | `1,000,000 / 1,000,000 * $3 + 2,000,000 / 1,000,000 * $15` | $33.000000 |
 | Compute | `1,024 / 1,024 * 60,000 / 1,000 * $0.0000166667 + $0.0000002` | $0.001000202, rounded to $0.001000 |
-| Storage | `1,000,000,000 / 1,000,000,000 * $0.023 + (996 + 4) / 1,000 * $0.005` | $0.028000 |
+| Storage | `1,000,000,000 / 1,000,000,000 * $0.023 + 4 / 1,000 * $0.005` | $0.023020 |
 | Platform | `$0.00001` | $0.000010 |
-| Total | Sum of the rounded components | **$63.029010** (`63,029,010` microdollars) |
+| Total | Sum of the rounded components | **$63.024030** (`63,024,030` microdollars) |
 
 ## Pre-run estimate and post-run cost
 
@@ -64,11 +67,11 @@ uploaded. Both paths then use the same five formulas.
 
 | `RunUsage` field | Pre-run estimate | Post-run cost |
 |---|---|---|
-| `chars_synthesized` | `len(original_text)` | `len(corrected)` after normalization and abbreviation substitutions |
-| `chunks` | Actual result of `split_text(original_text, max_chunk_chars)` | Actual result of splitting the corrected text |
+| `chars_synthesized` | `len()` of the text after abbreviation substitutions and normalization - the same deterministic transforms the processor applies, so expansion cannot smuggle a large run past the cap | `len(corrected)` after normalization and abbreviation substitutions |
+| `chunks` | Actual result of `split_text()` on that transformed text | Actual result of splitting the corrected text |
 | `audio_ms` | `round(len(text) / 900 * 60_000)` | Duration from the generated timing map |
 | `stored_bytes` | Twice the original UTF-8 byte length, plus estimated audio bytes at 48,000 bit/s | Sum of UTF-8 bytes for original text, corrected text, and timing-map JSON, plus merged recording bytes |
-| `compute_ms_by_stage` | `{"estimated": lambda_timeout_ms}` | Rounded wall-clock milliseconds for `normalize`, `synthesize`, and `merge` |
+| `compute_ms_by_stage` | `{"estimated": lambda_timeout_ms}` | Rounded wall-clock milliseconds for `normalize`, `synthesize` and `merge`, plus an `overhead` stage covering the rest of the invocation (S3 transfers, status writes, splitting) so billed time is not recorded as free |
 | `lambda_memory_mb` | `LAMBDA_MEMORY_MB` | `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`, falling back to `LAMBDA_MEMORY_MB` |
 | `vendor` | Resolved request vendor | Resolved processor vendor |
 | `llm_input_tokens` | `0` | `0`; token usage is not captured yet |
@@ -120,13 +123,14 @@ recognized price-book keys, for example:
 ```
 
 Unknown keys are ignored. Invalid JSON or a non-object value causes the entire
-override to be ignored and defaults to be used.
+override to be ignored and defaults to be used. Individual values that are not
+finite numbers, or are negative, are skipped and fall back to that key's
+default while valid siblings in the same object still apply - a `NaN` would
+otherwise raise inside the estimator and turn every reading creation into a 500.
 
-At present this override is applied by `POST /api/v1/costs/estimate` and the
-pre-run creation guardrail. The processor calculates the stored post-run cost
-with `DEFAULT_PRICES` directly, so `COST_PRICE_OVERRIDES` does not change newly
-recorded costs. A hotfix that must affect persistence therefore needs a code
-deployment; this is a current implementation gap.
+The override applies everywhere a cost is computed: the estimate endpoint, the
+pre-run creation guardrail and the processor's stored post-run cost. A hotfix
+therefore changes both what is blocked and what is recorded.
 
 For a permanent change, edit `DEFAULT_PRICES` in `backend/app/pricing.py` and
 bump `PRICE_BOOK_VERSION` in the same change. Per-reading and per-run records
@@ -171,7 +175,21 @@ persistence:
 |---|---|---|
 | `COST#<YYYY-MM>` | Atomic add | System monthly totals for cost components, characters, audio duration, and run count |
 | `COSTUSER#<YYYY-MM>#<user_id>` | Atomic add | The same counters for one user and month |
-| `COSTRUN#<YYYY-MM>#<ulid>` | New item per run | Reading, user, vendor, voice, component, usage, price-version, and timestamp detail for the dashboard |
+| `COSTRUN#<YYYY-MM>#<run_key>` | Conditional put, written first | Reading, user, vendor, voice, component, usage, price-version and timestamp detail for the dashboard |
+
+The run record is written **first**, under a deterministic `run_key` (the job
+id, or the reading id when there is none) and guarded by
+`attribute_not_exists(sk)`. If the record already exists the call returns
+before touching either counter, so a duplicate Lambda delivery of the same run
+cannot double-count the month.
+
+**Known limitation:** the three writes are idempotent but not transactional as
+a group. If a counter update fails after the run record is claimed, a later
+replay returns early and the monthly totals stay short by that run. The failure
+is logged. Making this exact would require `TransactWriteItems` with manual
+attribute-value serialization; that was judged not worth the complexity for an
+internal estimate dashboard, and is the first thing to change if the aggregates
+ever need to be authoritative.
 
 The per-run item is necessary because `ReadingRepository.list()` queries only
 `pk=USER#<user_id>`. It can return one user's readings, but cannot support an
@@ -200,7 +218,15 @@ empty, receives HTTP `403` with code `forbidden`.
 The estimate endpoint reports only the first applicable rejection in this
 order: global character limit, provider character limit, then per-run cost.
 The create guardrail rejects only when estimated cost is strictly greater than
-the cap. The retry endpoint does not re-run the cost guardrail.
+the cap. `POST /api/v1/readings/{id}/retry` runs the same guardrail before
+claiming the retry, creating a job or invoking the processor. It reads the
+stored original text to do so; if that read fails the retry returns HTTP `500`
+`storage_error` rather than proceeding, so a transient storage failure cannot
+bypass the cap.
+
+A retry is charged the same four PUTs and the same original-text bytes as a
+first run, even though the original object already exists and is not
+re-uploaded. This slightly overstates retry cost and is a known simplification.
 
 With the current defaults, the highest-cost accepted OpenAI input is 4,096
 characters and estimates to about $0.064. The `$0.25` cap is therefore a

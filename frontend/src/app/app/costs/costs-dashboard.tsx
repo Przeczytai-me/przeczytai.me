@@ -48,7 +48,7 @@ export const CostsDashboard = ({
 
       {hasAnyData ? (
         <>
-          <KpiTiles summary={summary} months={months} />
+          <KpiTiles summary={summary} />
 
           <div className="grid gap-3 lg:grid-cols-3">
             <BudgetMeter summary={summary} />

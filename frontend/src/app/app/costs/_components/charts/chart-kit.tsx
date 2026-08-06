@@ -97,14 +97,6 @@ export const EmptyChart = ({ message }: { message: string }) => (
   </div>
 );
 
-export const ChartSkeleton = ({ height = 160 }: { height?: number }) => (
-  <div
-    className="animate-pulse rounded-md bg-muted"
-    style={{ height }}
-    aria-hidden="true"
-  />
-);
-
 /** Every chart carries a text alternative. A chart no screen reader can read is
  *  not finished, and it doubles as the relief the palette's light-mode contrast
  *  warning requires. */

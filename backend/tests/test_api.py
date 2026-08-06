@@ -256,6 +256,15 @@ def client(
     repo = repo or FakeRepo()
     storage = storage or FakeStorage()
     settings = settings or Settings(max_text_chars=10)
+    # A reading always has its original text in storage - creation writes it
+    # before the item exists. Seeding it keeps the fakes faithful to that
+    # invariant, which the retry cost guardrail now depends on.
+    # isinstance avoids touching attributes on guard doubles that assert on
+    # any access to the reading repository.
+    for item in (repo.items.values() if isinstance(repo, FakeRepo) else ()):
+        key = str(item.get("original_text_key", ""))
+        if key and key not in storage.texts:
+            storage.texts[key] = "x" * int(item.get("char_count") or 1)
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_reading_repository] = lambda: repo
     app.dependency_overrides[get_file_storage] = lambda: storage

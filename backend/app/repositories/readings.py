@@ -380,13 +380,6 @@ class ReadingRepository:
                 ExpressionAttributeValues=values,
             )
 
-    def get_user_month_cost(self, owner_user_id: str, month: str) -> dict:
-        response = self.table.get_item(
-            Key={"pk": "SYSTEM", "sk": f"COSTUSER#{month}#{owner_user_id}"}
-        )
-        item = response.get("Item", {})
-        return item | {field: int(item.get(field, 0)) for field in COST_COUNTERS}
-
     def get_system_month_costs(self, months: int) -> list[dict]:
         response = self.table.query(
             KeyConditionExpression=Key("pk").eq("SYSTEM") & Key("sk").begins_with("COST#"),

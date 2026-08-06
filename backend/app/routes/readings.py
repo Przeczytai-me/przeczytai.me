@@ -58,21 +58,37 @@ def get_file_storage(settings: Settings = Depends(get_settings)) -> FileStorage:
     return FileStorage(settings.files_bucket_name)
 
 
-def _public_metadata(metadata: object) -> dict[str, object]:
-    """Strip cost data from the metadata returned to users.
+def _is_cost_key(key: object) -> bool:
+    folded = str(key).casefold()
+    return "cost" in folded or "price_book" in folded
 
-    Cost is internal: it lives in private top-level attributes and is served
+
+def _strip_cost(value: object) -> object:
+    """Recursively remove cost data from anything returned to users.
+
+    Filtering only top-level keys is not enough: a nested dict or a list of
+    dicts carries the same data straight through.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _strip_cost(child)
+            for key, child in value.items()
+            if not _is_cost_key(key)
+        }
+    if isinstance(value, list):
+        return [_strip_cost(child) for child in value]
+    return value
+
+
+def _public_metadata(metadata: object) -> dict[str, object]:
+    """Cost is internal: it lives in private top-level attributes and is served
     only by the admin endpoints. Enforcing that here rather than trusting every
-    writer means one careless line in the processor cannot leak it, which is
-    exactly how it leaked once already.
+    writer means one careless line cannot leak it, which is how it leaked once.
     """
     if not isinstance(metadata, dict):
         return {}
-    return {
-        key: value
-        for key, value in metadata.items()
-        if "cost" not in str(key).casefold() and "price_book" not in str(key).casefold()
-    }
+    stripped = _strip_cost(metadata)
+    return stripped if isinstance(stripped, dict) else {}
 
 
 def _reading(item: dict) -> Reading:
@@ -310,21 +326,20 @@ async def retry_reading(
     settings: Settings = Depends(get_settings),
 ) -> Job:
     item = _get_user_reading(user.user_id, reading_id, repo)
+    # The guardrail must not fail open: if the text cannot be read we cannot
+    # price the run, and starting it anyway would let a transient storage error
+    # bypass the cap.
     try:
         original_text = storage.get_text(str(item["original_text_key"]))
-    except Exception:
-        logger.exception(
-            "Failed to load original text for retry cost estimation",
-            extra={"reading_id": reading_id, "owner_user_id": user.user_id},
-        )
-    else:
-        selection = resolve_tts_selection(item.get("vendor"), item.get("voice"))
-        _enforce_cost_limit(
-            original_text,
-            item.get("abbreviation_readings"),
-            selection,
-            settings,
-        )
+    except StorageError as exc:
+        raise ApiException("storage_error", "Failed to load original text", 500) from exc
+    selection = resolve_tts_selection(item.get("vendor"), item.get("voice"))
+    _enforce_cost_limit(
+        original_text,
+        item.get("abbreviation_readings"),
+        selection,
+        settings,
+    )
     try:
         attempt = repo.begin_retry(user.user_id, reading_id)
     except RetryConflictError as exc:

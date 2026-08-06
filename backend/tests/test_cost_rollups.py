@@ -197,12 +197,6 @@ def test_add_cost_rollup_is_idempotent_for_the_same_run_key() -> None:
     )
 
 
-def test_get_user_month_cost_returns_zeroed_counters_when_absent() -> None:
-    result = make_repository(FakeTable()).get_user_month_cost("user-1", "2026-08")
-
-    assert all(result[field] == 0 for field in COUNTERS)
-
-
 @pytest.mark.parametrize(
     ("method", "prefix"),
     [
