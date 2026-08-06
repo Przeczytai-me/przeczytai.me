@@ -33,3 +33,17 @@ terraform -chdir=infrastructure/environments/dev apply
 
 Both are read by the processor Lambda, so no image rebuild is needed to change
 them — only a Terraform apply that updates the function's environment.
+
+## Cost model settings
+
+These settings control the internal cost model and dashboard. See
+`docs/cost-model.md` for formulas, guardrail behavior, and storage details.
+
+| Env var | Default | Used by | Meaning |
+|---|---|---|---|
+| `MAX_RUN_COST_USD` | `0.25` | API | Rejects creation when the pre-run estimate is greater than this many USD. |
+| `MONTHLY_BUDGET_USD` | unset | API | Optional dashboard comparison value. It only warns; it does not block processing. |
+| `ADMIN_USER_IDS` | empty | API | Comma-separated user IDs allowed to call `/api/v1/costs*`. An empty value fails closed. |
+| `LAMBDA_MEMORY_MB` | `256` | API, Processor | Memory used by pre-run compute estimates and the processor fallback when `AWS_LAMBDA_FUNCTION_MEMORY_SIZE` is absent. |
+| `LAMBDA_TIMEOUT_MS` | `600000` | API | Full processor timeout charged by the conservative pre-run compute estimate. |
+| `COST_PRICE_OVERRIDES` | unset | API | JSON object overriding recognized price keys for estimates and the creation guardrail. It does not currently affect processor-recorded post-run costs. |
