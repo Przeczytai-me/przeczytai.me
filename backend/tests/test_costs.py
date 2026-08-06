@@ -38,11 +38,11 @@ def test_estimate_cost_components_match_hand_calculation() -> None:
     assert result.llm_usd_micros == 33_000_000
     # 1 GB * 60 s * $0.0000166667 + $0.0000002 = $0.001000202.
     assert result.compute_usd_micros == 1_000
-    # 1 GB-month * $0.023 + 1K PUTs * $0.005 = $0.028.
-    assert result.storage_usd_micros == 28_000
+    # 1 GB-month * $0.023 + 4 PUTs * $0.005/1000 = $0.02302.
+    assert result.storage_usd_micros == 23_020
     # $0.00001 per run.
     assert result.platform_usd_micros == 10
-    assert result.total_usd_micros == 63_029_010
+    assert result.total_usd_micros == 63_024_030
     assert result.total_usd_micros == sum(
         (
             result.tts_usd_micros,
@@ -140,3 +140,16 @@ def test_paid_vendor_estimate_is_not_driven_by_speech_rate(monkeypatch) -> None:
 
     assert abs(halved - baseline) < baseline * 0.1
     assert abs(doubled - baseline) < baseline * 0.1
+
+
+def test_storage_puts_do_not_scale_with_chunk_count() -> None:
+    """Chunk MP3s never leave /tmp.
+
+    Only four objects are ever PUT - original text, corrected text, timing map
+    and the merged recording - so charging one PUT per chunk overstates a run
+    with many chunks.
+    """
+    few = estimate_cost(replace(BASE_USAGE, chunks=1))
+    many = estimate_cost(replace(BASE_USAGE, chunks=500))
+
+    assert few.storage_usd_micros == many.storage_usd_micros

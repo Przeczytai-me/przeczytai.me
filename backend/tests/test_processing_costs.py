@@ -269,3 +269,32 @@ def test_cost_failure_does_not_fail_completed_reading(monkeypatch) -> None:
     assert repo.completed is not None
     assert repo.cost is None
     assert repo.rollups == []
+
+
+def test_compute_stages_account_for_the_whole_invocation() -> None:
+    """S3 downloads, uploads and status writes are billed Lambda time too.
+
+    Measuring only normalize/synthesize/merge undercounts compute, so the run
+    records an explicit overhead stage for the remainder.
+    """
+    event = {
+        "reading_id": "job-1",
+        "owner_user_id": "user-1",
+        "original_text_key": "users/user-1/readings/job-1/original.txt",
+    }
+    repo = FakeRepo()
+
+    asyncio.run(
+        process_reading(
+            event,
+            Settings(readings_table_name="table", files_bucket_name="bucket"),
+            FakeStorage(),
+            repo,
+            fake_synthesize,
+        )
+    )
+
+    assert repo.cost is not None
+    stages = repo.cost.usage.compute_ms_by_stage
+    assert "overhead" in stages
+    assert all(value >= 0 for value in stages.values())

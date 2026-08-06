@@ -104,6 +104,53 @@ def nested_keys(value: object):
             yield from nested_keys(child)
 
 
+def month_key(months_ago: int) -> str:
+    now = datetime.now(UTC)
+    absolute_month = now.year * 12 + now.month - 1 - months_ago
+    year, zero_based_month = divmod(absolute_month, 12)
+    return f"{year:04d}-{zero_based_month + 1:02d}"
+
+
+def system_month_cost(month: str, total_usd_micros: int, runs: int) -> dict:
+    return {
+        "pk": "SYSTEM",
+        "sk": f"COST#{month}",
+        "total_usd_micros": total_usd_micros,
+        "tts_usd_micros": total_usd_micros,
+        "llm_usd_micros": 0,
+        "compute_usd_micros": 0,
+        "storage_usd_micros": 0,
+        "platform_usd_micros": 0,
+        "runs": runs,
+        "chars": runs * 100,
+        "audio_ms": runs * 1_000,
+    }
+
+
+def run_cost(
+    month: str,
+    reading_id: str,
+    vendor: str,
+    voice: str,
+    total_usd_micros: int,
+) -> dict:
+    return {
+        "pk": "SYSTEM",
+        "sk": f"COSTRUN#{month}#{reading_id}",
+        "reading_id": reading_id,
+        "created_at": f"{month}-15T12:00:00Z",
+        "vendor": vendor,
+        "voice": voice,
+        "total_usd_micros": total_usd_micros,
+        "tts_usd_micros": total_usd_micros,
+        "llm_usd_micros": 0,
+        "compute_usd_micros": 0,
+        "storage_usd_micros": 0,
+        "platform_usd_micros": 0,
+        "chars": 100,
+    }
+
+
 def test_get_costs_as_admin_has_the_complete_top_level_shape() -> None:
     test_client, _, _ = client()
 
@@ -231,6 +278,30 @@ def test_estimate_reports_each_vendor_limit_without_writing() -> None:
     assert storage.texts == {}
 
 
+def test_estimate_rejects_all_whitespace_text() -> None:
+    test_client, _, _ = client()
+
+    response = test_client.post("/api/v1/costs/estimate", json={"original_text": " \n\t  "})
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
+def test_estimate_strips_surrounding_whitespace_before_counting_characters() -> None:
+    test_client, _, _ = client()
+
+    stripped = test_client.post(
+        "/api/v1/costs/estimate", json={"original_text": "hello world"}
+    )
+    padded = test_client.post(
+        "/api/v1/costs/estimate", json={"original_text": " \n hello world \t "}
+    )
+
+    assert stripped.status_code == 200
+    assert padded.status_code == 200
+    assert padded.json()["char_count"] == stripped.json()["char_count"] == len("hello world")
+
+
 def test_reading_endpoints_never_leak_cost_fields() -> None:
     repo = FakeCostRepo()
     item = add_reading(repo, "user-1", "private costs")
@@ -287,3 +358,65 @@ def test_user_references_are_stable_and_pseudonymous() -> None:
     assert first[0]["user_ref"] == second[0]["user_ref"]
     assert first[0]["user_ref"] != raw_user_id
     assert raw_user_id not in first[0]["user_ref"]
+
+
+def test_user_references_have_at_least_64_bits_of_hash() -> None:
+    repo = FakeCostRepo()
+    month = month_key(0)
+    repo.user_costs = [
+        {
+            "pk": "SYSTEM",
+            "sk": f"COSTUSER#{month}#user-sensitive-id",
+            "total_usd_micros": 1,
+        }
+    ]
+    test_client, _, _ = client(repo=repo)
+
+    user_ref = test_client.get("/api/v1/costs").json()["users"][0]["user_ref"]
+
+    assert len(user_ref) >= 16
+    assert all(character in "0123456789abcdef" for character in user_ref)
+
+
+def test_current_month_days_and_vendors_exclude_previous_month_runs() -> None:
+    repo = FakeCostRepo()
+    current_month = month_key(0)
+    previous_month = month_key(1)
+    repo.run_costs = [
+        run_cost(current_month, "reading-current", "openai", "alloy", 1_000),
+        run_cost(previous_month, "reading-previous", "edge-tts", "Zofia", 2_000),
+    ]
+    test_client, _, _ = client(repo=repo)
+
+    response = test_client.get("/api/v1/costs?months=2")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert {run["reading_id"] for run in body["runs"]} == {
+        "reading-current",
+        "reading-previous",
+    }
+    assert (
+        body["days"],
+        {(vendor["vendor"], vendor["voice"]) for vendor in body["vendors"]},
+    ) == (
+        [{"date": f"{current_month}-15", "total_usd": 0.001, "runs": 1}],
+        {("openai", "alloy")},
+    )
+
+
+def test_all_time_totals_include_rollups_older_than_the_requested_window() -> None:
+    repo = FakeCostRepo()
+    repo.system_costs = [
+        system_month_cost(month_key(index), (index + 1) * 1_000_000, index + 1)
+        for index in range(8)
+    ]
+    test_client, _, _ = client(repo=repo)
+
+    response = test_client.get("/api/v1/costs?months=3")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["months"]) == 3
+    assert body["totals"]["all_time_usd"] == sum(range(1, 9))
+    assert body["totals"]["runs_all_time"] == sum(range(1, 9))

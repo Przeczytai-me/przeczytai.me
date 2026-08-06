@@ -1,3 +1,4 @@
+import inspect
 import re
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ class FakeTable:
         self.calls: list[dict[str, object]] = []
         self.raise_conditional = raise_conditional
         self.item: dict | None = None
+        self.items: dict[tuple[object, object], dict] = {}
         self.query_items: list[dict] = []
 
     def update_item(self, **kwargs: object) -> None:
@@ -23,8 +25,27 @@ class FakeTable:
                 "UpdateItem",
             )
 
+        key = kwargs["Key"]
+        assert isinstance(key, dict)
+        stored = self.items.setdefault((key["pk"], key["sk"]), dict(key))
+        values = kwargs["ExpressionAttributeValues"]
+        assert isinstance(values, dict)
+        for placeholder, value in values.items():
+            field = str(placeholder).removeprefix(":")
+            if field != "updated_at" and isinstance(value, int):
+                stored[field] = int(stored.get(field, 0)) + value
+
     def put_item(self, **kwargs: object) -> None:
         self.calls.append(kwargs)
+        item = kwargs["Item"]
+        assert isinstance(item, dict)
+        key = (item["pk"], item["sk"])
+        if kwargs.get("ConditionExpression") is not None and key in self.items:
+            raise ClientError(
+                {"Error": {"Code": "ConditionalCheckFailedException"}},
+                "PutItem",
+            )
+        self.items[key] = dict(item)
 
     def get_item(self, **kwargs: object) -> dict:
         self.calls.append(kwargs)
@@ -79,10 +100,21 @@ COST = SimpleNamespace(
 )
 
 
-def add_rollup(table: FakeTable) -> None:
-    make_repository(table).add_cost_rollup(
-        "user-1", "2026-08", COST, reading_id="reading-1", voice="alloy"
-    )
+def add_rollup(table: FakeTable, run_key: str = "job-1") -> None:
+    repository = make_repository(table)
+    if "run_key" in inspect.signature(repository.add_cost_rollup).parameters:
+        repository.add_cost_rollup(
+            "user-1",
+            "2026-08",
+            COST,
+            reading_id="reading-1",
+            voice="alloy",
+            run_key=run_key,
+        )
+    else:
+        repository.add_cost_rollup(
+            "user-1", "2026-08", COST, reading_id="reading-1", voice="alloy"
+        )
 
 
 def test_add_cost_rollup_writes_month_user_and_run_records() -> None:
@@ -91,9 +123,13 @@ def test_add_cost_rollup_writes_month_user_and_run_records() -> None:
     add_rollup(table)
 
     assert len(table.calls) == 3
-    assert table.calls[0]["Key"] == {"pk": "SYSTEM", "sk": "COST#2026-08"}
-    assert table.calls[1]["Key"] == {"pk": "SYSTEM", "sk": "COSTUSER#2026-08#user-1"}
-    assert str(table.calls[2]["Item"]["sk"]).startswith("COSTRUN#2026-08#")
+    update_keys = {tuple(call["Key"].values()) for call in table.calls if "Key" in call}
+    assert update_keys == {
+        ("SYSTEM", "COST#2026-08"),
+        ("SYSTEM", "COSTUSER#2026-08#user-1"),
+    }
+    run_call = next(call for call in table.calls if "Item" in call)
+    assert str(run_call["Item"]["sk"]).startswith("COSTRUN#2026-08#")
 
 
 def test_month_and_user_rollups_use_atomic_counters() -> None:
@@ -101,7 +137,7 @@ def test_month_and_user_rollups_use_atomic_counters() -> None:
 
     add_rollup(table)
 
-    for call in table.calls[:2]:
+    for call in (call for call in table.calls if "UpdateExpression" in call):
         expression = str(call["UpdateExpression"])
         values = call["ExpressionAttributeValues"]
         assert expression.startswith("SET ")
@@ -118,7 +154,7 @@ def test_run_record_carries_everything_the_dashboard_needs() -> None:
     table = FakeTable()
 
     add_rollup(table)
-    item = table.calls[2]["Item"]
+    item = next(call["Item"] for call in table.calls if "Item" in call)
 
     assert item["pk"] == "SYSTEM"
     assert item["reading_id"] == "reading-1"
@@ -135,15 +171,35 @@ def test_run_record_carries_everything_the_dashboard_needs() -> None:
     assert item["created_at"]
 
 
-def test_each_run_gets_its_own_record_so_retries_are_not_lost() -> None:
+def test_each_run_key_gets_its_own_record_so_retries_are_not_lost() -> None:
     table = FakeTable()
 
-    add_rollup(table)
-    add_rollup(table)
+    add_rollup(table, run_key="job-1")
+    add_rollup(table, run_key="job-2")
 
     run_keys = [call["Item"]["sk"] for call in table.calls if "Item" in call]
     assert len(run_keys) == 2
     assert run_keys[0] != run_keys[1]
+
+
+def test_add_cost_rollup_is_idempotent_for_the_same_run_key() -> None:
+    table = FakeTable()
+
+    add_rollup(table, run_key="job-1")
+    add_rollup(table, run_key="job-1")
+
+    month_item = table.items[("SYSTEM", "COST#2026-08")]
+    user_item = table.items[("SYSTEM", "COSTUSER#2026-08#user-1")]
+    month_counters = {field: month_item[field] for field in COUNTERS}
+    user_counters = {field: user_item[field] for field in COUNTERS}
+    run_records = [
+        item for item in table.items.values() if str(item.get("sk", "")).startswith("COSTRUN#")
+    ]
+    assert (month_counters, user_counters, len(run_records)) == (
+        EXPECTED_COUNTERS,
+        EXPECTED_COUNTERS,
+        1,
+    )
 
 
 def test_get_user_month_cost_returns_zeroed_counters_when_absent() -> None:
