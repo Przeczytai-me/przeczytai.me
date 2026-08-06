@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 
     max_text_chars: int = 100_000
     max_chunk_chars: int = 3000
+    # Matches the deployed processor Lambda; only used when the runtime env var is absent.
+    lambda_memory_mb: int = 256
     ai_normalization_enabled: bool = False
     readings_table_name: str = Field(
         default="local-readings",

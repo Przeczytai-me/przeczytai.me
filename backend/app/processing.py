@@ -1,11 +1,16 @@
 import asyncio
 import json
 import logging
+import os
+import time
+from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from app.audio import merge_mp3_files, mp3_duration_seconds
 from app.config import Settings, get_settings
+from app.costs import CostBreakdown, RunUsage, estimate_cost
 from app.models import ReadingStatus
 from app.normalization import (
     RULE_BASED_NORMALIZATION_VERSION,
@@ -72,6 +77,7 @@ async def process_reading(
         repo.set_status(owner_user_id, reading_id, current_stage)
         if job_id:
             repo.set_job_status(owner_user_id, str(job_id), current_stage)
+        normalize_started = time.perf_counter()
         corrected = apply_abbreviation_readings(original_text, pairs)
         try:
             corrected = normalize(corrected)
@@ -91,6 +97,7 @@ async def process_reading(
                     "AI text normalization failed",
                     extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
                 )
+        normalize_ms = round((time.perf_counter() - normalize_started) * 1000)
 
         corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id, job_id=job_id)
         recording_key = storage.recording_key(
@@ -119,17 +126,23 @@ async def process_reading(
         repo.set_status(owner_user_id, reading_id, current_stage)
         if job_id:
             repo.set_job_status(owner_user_id, str(job_id), current_stage)
+        synthesize_started = time.perf_counter()
         for chunk, chunk_path in zip(chunks, chunk_paths, strict=True):
             await synthesize(chunk.text, str(chunk_path), selection, settings)
+        synthesize_ms = round((time.perf_counter() - synthesize_started) * 1000)
         durations = [mp3_duration_seconds(chunk_path) for chunk_path in chunk_paths]
         timing_map = build_timing_map(chunks, durations)
-        storage.put_text(timing_map_key, json.dumps(timing_map), "application/json")
+        timing_map_json = json.dumps(timing_map)
+        storage.put_text(timing_map_key, timing_map_json, "application/json")
         current_stage = ReadingStatus.MERGING_AUDIO
         repo.set_status(owner_user_id, reading_id, current_stage)
         if job_id:
             repo.set_job_status(owner_user_id, str(job_id), current_stage)
+        merge_started = time.perf_counter()
         merge_mp3_files(chunk_paths, recording_path)
-        storage.put_bytes(recording_key, recording_path.read_bytes(), provider.content_type)
+        merge_ms = round((time.perf_counter() - merge_started) * 1000)
+        recording = recording_path.read_bytes()
+        storage.put_bytes(recording_key, recording, provider.content_type)
 
         metadata = {
             **tts_metadata(selection),
@@ -137,14 +150,94 @@ async def process_reading(
             "chunks": len(chunks),
             "merge": "byte-concat-v1",
         }
-        repo.mark_completed(
-            owner_user_id,
-            reading_id,
-            corrected_text_key,
-            recording_key,
-            metadata,
-            timing_map_key,
-        )
+        cost: CostBreakdown | None = None
+        try:
+            usage = RunUsage(
+                chars_synthesized=len(corrected),
+                chunks=len(chunks),
+                audio_ms=int(timing_map["duration_ms"]),
+                stored_bytes=sum(
+                    (
+                        len(original_text.encode()),
+                        len(corrected.encode()),
+                        len(timing_map_json.encode()),
+                        len(recording),
+                    )
+                ),
+                compute_ms_by_stage={
+                    "normalize": normalize_ms,
+                    "synthesize": synthesize_ms,
+                    "merge": merge_ms,
+                },
+                lambda_memory_mb=int(
+                    os.environ.get("AWS_LAMBDA_FUNCTION_MEMORY_SIZE")
+                    or settings.lambda_memory_mb
+                ),
+                vendor=selection.vendor,
+            )
+            cost = estimate_cost(usage)
+            metadata["cost_usage"] = asdict(usage)
+        except Exception:
+            logger.exception(
+                "reading cost calculation failed",
+                extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
+            )
+
+        if cost is None:
+            repo.mark_completed(
+                owner_user_id,
+                reading_id,
+                corrected_text_key,
+                recording_key,
+                metadata,
+                timing_map_key,
+            )
+        else:
+            try:
+                repo.mark_completed(
+                    owner_user_id,
+                    reading_id,
+                    corrected_text_key,
+                    recording_key,
+                    metadata,
+                    timing_map_key,
+                    cost=cost,
+                )
+            except Exception:
+                logger.exception(
+                    "reading cost persistence failed",
+                    extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
+                )
+                metadata.pop("cost_usage", None)
+                repo.mark_completed(
+                    owner_user_id,
+                    reading_id,
+                    corrected_text_key,
+                    recording_key,
+                    metadata,
+                    timing_map_key,
+                )
+            else:
+                logger.info(
+                    "reading cost recorded",
+                    extra={
+                        "reading_id": reading_id,
+                        "owner_user_id": owner_user_id,
+                        "total_usd_micros": cost.total_usd_micros,
+                        "price_book_version": cost.price_book_version,
+                    },
+                )
+                try:
+                    repo.add_cost_rollup(
+                        owner_user_id,
+                        datetime.now(UTC).strftime("%Y-%m"),
+                        cost,
+                    )
+                except Exception:
+                    logger.exception(
+                        "reading cost rollup failed",
+                        extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
+                    )
         if job_id:
             repo.set_job_status(owner_user_id, str(job_id), ReadingStatus.COMPLETED)
         return {"status": "completed"}

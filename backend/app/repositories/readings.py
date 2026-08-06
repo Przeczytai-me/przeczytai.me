@@ -1,5 +1,6 @@
 import base64
 import json
+from dataclasses import asdict
 from datetime import UTC, datetime
 
 import boto3
@@ -7,6 +8,7 @@ import ulid
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
+from app.costs import CostBreakdown
 from app.models import ReadingStatus
 
 
@@ -248,24 +250,60 @@ class ReadingRepository:
         recording_key: str,
         metadata: dict[str, object],
         timing_map_key: str,
+        *,
+        cost: CostBreakdown | None = None,
     ) -> None:
+        updates = [
+            "#status = :status",
+            "corrected_text_key = :corrected_text_key",
+            "recording_key = :recording_key",
+            "timing_map_key = :timing_map_key",
+            "metadata = :metadata",
+            "updated_at = :updated_at",
+        ]
+        values: dict[str, object] = {
+            ":status": ReadingStatus.COMPLETED,
+            ":corrected_text_key": corrected_text_key,
+            ":recording_key": recording_key,
+            ":timing_map_key": timing_map_key,
+            ":metadata": metadata,
+            ":updated_at": _now(),
+        }
+        if cost is not None:
+            updates.extend(
+                [
+                    "cost_usd_micros = :cost_usd_micros",
+                    "cost_components = :cost_components",
+                    "cost_usage = :cost_usage",
+                    "price_book_version = :price_book_version",
+                ]
+            )
+            values.update(
+                {
+                    ":cost_usd_micros": cost.total_usd_micros,
+                    ":cost_components": {
+                        "tts_usd_micros": cost.tts_usd_micros,
+                        "llm_usd_micros": cost.llm_usd_micros,
+                        "compute_usd_micros": cost.compute_usd_micros,
+                        "storage_usd_micros": cost.storage_usd_micros,
+                        "platform_usd_micros": cost.platform_usd_micros,
+                    },
+                    ":cost_usage": asdict(cost.usage),
+                    ":price_book_version": cost.price_book_version,
+                }
+            )
         self._update_existing(
             owner_user_id,
             reading_id,
-            "SET #status = :status, corrected_text_key = :corrected_text_key, "
-            "recording_key = :recording_key, timing_map_key = :timing_map_key, "
-            "metadata = :metadata, "
-            "updated_at = :updated_at",
+            "SET " + ", ".join(updates),
             {"#status": "status"},
-            {
-                ":status": ReadingStatus.COMPLETED,
-                ":corrected_text_key": corrected_text_key,
-                ":recording_key": recording_key,
-                ":timing_map_key": timing_map_key,
-                ":metadata": metadata,
-                ":updated_at": _now(),
-            },
+            values,
         )
+
+    def add_cost_rollup(
+        self, owner_user_id: str, month: str, cost: CostBreakdown
+    ) -> None:
+        pass
 
     def list(
         self, owner_user_id: str, limit: int, cursor: str | None
