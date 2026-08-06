@@ -8,7 +8,6 @@ import {
   useTooltip,
 } from "./chart-kit";
 
-const W = 320;
 const H = 140;
 const PAD = { top: 12, right: 8, bottom: 24, left: 30 };
 const BINS = 18;
@@ -47,90 +46,96 @@ export const HistogramChart = ({
     bins[index] += 1;
   }
   const countMax = Math.max(...bins, 1);
-  const x = (value: number) =>
-    scale(value, [0, axisMax], [PAD.left, W - PAD.right]);
   const y = (count: number) =>
     scale(count, [0, countMax], [H - PAD.bottom, PAD.top]);
-  const barWidth = (W - PAD.left - PAD.right) / BINS;
-  const limitX = x(limit);
   const overLimit = values.filter((value) => value > limit).length;
 
   return (
     <div className="relative">
-      <ChartFigure summary={summary} width={W} height={H}>
-        <line
-          x1={PAD.left}
-          x2={W - PAD.right}
-          y1={y(0)}
-          y2={y(0)}
-          className="stroke-border"
-        />
-        {bins.map((count, index) => {
-          const binStart = index * binWidth;
+      <ChartFigure summary={summary} height={H}>
+        {(W) => {
+          const x = (value: number) =>
+            scale(value, [0, axisMax], [PAD.left, W - PAD.right]);
+          const barWidth = (W - PAD.left - PAD.right) / BINS;
+          const limitX = x(limit);
           return (
-            <rect
-              key={binStart}
-              x={x(binStart) + 0.5}
-              y={y(count)}
-              width={Math.max(barWidth - 1, 1)}
-              height={Math.max(y(0) - y(count), count > 0 ? 1 : 0)}
-              rx={1.5}
-              fill="var(--cost-tts)"
-              opacity={0.8}
-              onMouseEnter={(event) =>
-                show(
-                  event,
-                  <div>
-                    <p className="font-medium tabular-nums">
-                      {formatValue(binStart)} –{" "}
-                      {formatValue(binStart + binWidth)}
-                    </p>
-                    <p className="tabular-nums">{count} runs</p>
-                  </div>,
-                )
-              }
-              onMouseLeave={hide}
-            />
+            <>
+              <line
+                x1={PAD.left}
+                x2={W - PAD.right}
+                y1={y(0)}
+                y2={y(0)}
+                className="stroke-border"
+              />
+              {bins.map((count, index) => {
+                const binStart = index * binWidth;
+                return (
+                  <rect
+                    key={binStart}
+                    x={x(binStart) + 0.5}
+                    y={y(count)}
+                    width={Math.max(barWidth - 1, 1)}
+                    height={Math.max(y(0) - y(count), count > 0 ? 1 : 0)}
+                    rx={1.5}
+                    fill="var(--cost-tts)"
+                    opacity={0.8}
+                    onMouseEnter={(event) =>
+                      show(
+                        event,
+                        <div>
+                          <p className="font-medium tabular-nums">
+                            {formatValue(binStart)} –{" "}
+                            {formatValue(binStart + binWidth)}
+                          </p>
+                          <p className="tabular-nums">{count} runs</p>
+                        </div>,
+                      )
+                    }
+                    onMouseLeave={hide}
+                  />
+                );
+              })}
+
+              <line
+                x1={limitX}
+                x2={limitX}
+                y1={PAD.top - 6}
+                y2={y(0)}
+                className="stroke-destructive"
+                strokeWidth={1.25}
+                strokeDasharray="3 2"
+              />
+              <text
+                x={Math.min(limitX + 3, W - PAD.right - 2)}
+                y={PAD.top - 1}
+                textAnchor={limitX > W - 90 ? "end" : "start"}
+                className="fill-destructive text-[9px] font-medium"
+              >
+                {limitLabel}
+              </text>
+
+              {[0, axisMax / 2, axisMax].map((tick) => (
+                <text
+                  key={tick}
+                  x={x(tick)}
+                  y={H - 12}
+                  textAnchor="middle"
+                  className="fill-muted-foreground text-[9px]"
+                >
+                  {formatValue(tick)}
+                </text>
+              ))}
+              <text
+                x={W / 2}
+                y={H - 2}
+                textAnchor="middle"
+                className="fill-muted-foreground text-[9px]"
+              >
+                cost per run · {overLimit} of {values.length} runs above the cap
+              </text>
+            </>
           );
-        })}
-
-        <line
-          x1={limitX}
-          x2={limitX}
-          y1={PAD.top - 6}
-          y2={y(0)}
-          className="stroke-destructive"
-          strokeWidth={1.25}
-          strokeDasharray="3 2"
-        />
-        <text
-          x={Math.min(limitX + 3, W - PAD.right - 2)}
-          y={PAD.top - 1}
-          textAnchor={limitX > W - 70 ? "end" : "start"}
-          className="fill-destructive text-[7px] font-medium"
-        >
-          {limitLabel}
-        </text>
-
-        {[0, axisMax / 2, axisMax].map((tick) => (
-          <text
-            key={tick}
-            x={x(tick)}
-            y={H - 12}
-            textAnchor="middle"
-            className="fill-muted-foreground text-[7px]"
-          >
-            {formatValue(tick)}
-          </text>
-        ))}
-        <text
-          x={W / 2}
-          y={H - 2}
-          textAnchor="middle"
-          className="fill-muted-foreground text-[7px]"
-        >
-          cost per run · {overLimit} of {values.length} runs above the cap
-        </text>
+        }}
       </ChartFigure>
       <Tooltip tooltip={tooltip} />
     </div>

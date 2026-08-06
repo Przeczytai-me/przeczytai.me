@@ -113,28 +113,43 @@ export const ChartSkeleton = ({ height = 160 }: { height?: number }) => (
 export const ChartFigure = ({
   summary,
   children,
-  width = 320,
   height = 160,
 }: {
   summary: string;
-  children: ReactNode;
-  width?: number;
+  /** Receives the measured pixel width so marks are laid out at real size. */
+  children: (width: number) => ReactNode;
   height?: number;
-}) => (
-  <figure className="m-0">
-    {/* Uniform scaling only: preserveAspectRatio="none" would stretch strokes
-        and turn scatter dots into ellipses. */}
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className="h-auto w-full overflow-visible"
-      role="img"
-      aria-label={summary}
-    >
-      <title>{summary}</title>
-      {children}
-    </svg>
-  </figure>
-);
+}) => {
+  const [width, setWidth] = useState(320);
+  const ref = useCallback((node: HTMLElement | null) => {
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setWidth(Math.max(entry.contentRect.width, 160));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  /* The viewBox tracks the container's real aspect ratio rather than a fixed
+     one. With a fixed viewBox, uniform scaling makes a chart in a wide card
+     absurdly tall, and preserveAspectRatio="none" is not an option because it
+     stretches text and turns scatter dots into ellipses. */
+  return (
+    <figure className="m-0" ref={ref}>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        width="100%"
+        height={height}
+        className="overflow-visible"
+        role="img"
+        aria-label={summary}
+      >
+        <title>{summary}</title>
+        {children(width)}
+      </svg>
+    </figure>
+  );
+};
 
 export const Legend = ({
   items,
