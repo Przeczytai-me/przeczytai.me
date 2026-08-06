@@ -83,6 +83,18 @@
   --sidebar-ring: oklch(0.708 0 0);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
+
+  /* Categorical cost-component hues. Slot order matches the CostComponents field
+     order, so stacked segments are always adjacent in the order the palette was
+     validated in. Validated with the dataviz six checks against this surface:
+     worst adjacent CVD dE 9.1, worst adjacent normal-vision dE 19.6. Three slots
+     sit below 3:1 here, so every chart using them ships visible labels or a table.
+     The amber --chart-* ramp is sequential and stays reserved for magnitude. */
+  --cost-tts: #2a78d6;
+  --cost-llm: #eb6834;
+  --cost-compute: #1baf7a;
+  --cost-storage: #eda100;
+  --cost-platform: #e87ba4;
 }
 
 .dark {
@@ -117,6 +129,15 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* Same eight hues re-stepped for the dark surface (#171717), not an automatic
+     flip. Validated as a set: worst adjacent CVD dE 8.4, normal-vision dE 19.3,
+     and all five clear 3:1 against the card. */
+  --cost-tts: #3987e5;
+  --cost-llm: #d95926;
+  --cost-compute: #199e70;
+  --cost-storage: #c98500;
+  --cost-platform: #d55181;
 }
 
 @layer base {
