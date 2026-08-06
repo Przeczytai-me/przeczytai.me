@@ -58,15 +58,6 @@ EXPECTED_COUNTERS = {
     "runs": 1,
 }
 COUNTERS = tuple(EXPECTED_COUNTERS)
-COST = SimpleNamespace(
-    total_usd_micros=EXPECTED_COUNTERS["total_usd_micros"],
-    tts_usd_micros=EXPECTED_COUNTERS["tts_usd_micros"],
-    llm_usd_micros=EXPECTED_COUNTERS["llm_usd_micros"],
-    compute_usd_micros=EXPECTED_COUNTERS["compute_usd_micros"],
-    storage_usd_micros=EXPECTED_COUNTERS["storage_usd_micros"],
-    platform_usd_micros=EXPECTED_COUNTERS["platform_usd_micros"],
-    price_book_version="2026-08-05",
-)
 USAGE = SimpleNamespace(
     chars_synthesized=EXPECTED_COUNTERS["chars"],
     audio_ms=EXPECTED_COUNTERS["audio_ms"],
@@ -76,11 +67,21 @@ USAGE = SimpleNamespace(
     vendor="openai",
     compute_ms_by_stage={"normalize": 1, "synthesize": 90, "merge": 10},
 )
+COST = SimpleNamespace(
+    total_usd_micros=EXPECTED_COUNTERS["total_usd_micros"],
+    tts_usd_micros=EXPECTED_COUNTERS["tts_usd_micros"],
+    llm_usd_micros=EXPECTED_COUNTERS["llm_usd_micros"],
+    compute_usd_micros=EXPECTED_COUNTERS["compute_usd_micros"],
+    storage_usd_micros=EXPECTED_COUNTERS["storage_usd_micros"],
+    platform_usd_micros=EXPECTED_COUNTERS["platform_usd_micros"],
+    price_book_version="2026-08-05",
+    usage=USAGE,
+)
 
 
 def add_rollup(table: FakeTable) -> None:
     make_repository(table).add_cost_rollup(
-        "user-1", "2026-08", COST, USAGE, reading_id="reading-1", voice="alloy"
+        "user-1", "2026-08", COST, reading_id="reading-1", voice="alloy"
     )
 
 
