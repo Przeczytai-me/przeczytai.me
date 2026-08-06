@@ -2,13 +2,13 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from test_api import FakeRepo, FakeStorage, add_reading
 
 from app.auth import CurrentUser, get_current_user
 from app.config import Settings, get_settings
 from app.main import app
 from app.routes.readings import get_file_storage, get_reading_repository
 from app.tts import OPENAI_TTS_INPUT_MAX_CHARS, TTS_PROVIDERS
-from test_api import FakeRepo, FakeStorage, add_reading
 
 TOP_LEVEL_KEYS = {
     "currency",

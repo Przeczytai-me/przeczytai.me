@@ -11,13 +11,13 @@ from app.audio import merge_mp3_files, mp3_duration_seconds
 from app.config import Settings, get_settings
 from app.costs import CostBreakdown, RunUsage, estimate_cost
 from app.models import ReadingStatus
-from app.pricing import get_prices
 from app.normalization import (
     RULE_BASED_NORMALIZATION_VERSION,
-    apply_abbreviation_readings,
     ai_normalize,
+    apply_abbreviation_readings,
     normalize,
 )
+from app.pricing import get_prices
 from app.repositories.readings import ReadingRepository
 from app.splitting import split_text
 from app.storage import FileStorage
@@ -29,7 +29,6 @@ from app.tts import (
     tts_metadata,
     validate_tts_input,
 )
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

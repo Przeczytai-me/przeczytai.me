@@ -19,8 +19,8 @@ from app.models import (
     ReadingStatus,
     TimingMapResponse,
 )
-from app.pricing import get_prices
 from app.normalization import apply_abbreviation_readings, normalize
+from app.pricing import get_prices
 from app.repositories.readings import ProcessingStartError, ReadingRepository, RetryConflictError
 from app.storage import FileStorage, StorageError, StorageObjectNotFoundError
 from app.tts import (

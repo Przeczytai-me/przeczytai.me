@@ -1,7 +1,6 @@
 import json
 import math
 
-
 PRICE_BOOK_VERSION = "2026-08-05"
 DEFAULT_PRICES = {
     "tts.edge-tts": 0.0,  # unverified: Edge TTS is exposed without a usage price

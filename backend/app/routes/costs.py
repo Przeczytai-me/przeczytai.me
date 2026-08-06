@@ -22,7 +22,7 @@ COMPONENTS = ("tts", "llm", "compute", "storage", "platform")
 BUDGET_THRESHOLDS = [50, 80, 95]
 
 
-def _usd(micros: int | float | None) -> float:
+def _usd(micros: float | None) -> float:
     return float(micros or 0) / USD_MICROS
 
 

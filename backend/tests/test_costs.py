@@ -1,10 +1,9 @@
 from dataclasses import replace
 
-import app.costs as costs
+from app import costs
 from app.costs import CostBreakdown, RunUsage, estimate_cost, usage_from_text
 from app.pricing import DEFAULT_PRICES, PRICE_BOOK_VERSION
 from app.splitting import split_text
-
 
 BASE_USAGE = RunUsage(
     chars_synthesized=1_000_000,

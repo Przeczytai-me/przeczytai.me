@@ -19,7 +19,11 @@ dev = [
   "mutagen>=1.47",
   "python-dotenv>=1.2",
   "pytest>=8.3",
-  "ruff>=0.8",
+  # Upper bound is deliberate: ruff 0.16 enables rules (notably B008 on
+  # FastAPI's Depends idiom, used by every route in this repo) that flag 66
+  # pre-existing issues on main. Unpinning made CI fail spontaneously the day
+  # 0.16 shipped, on a branch that changed none of the offending code.
+  "ruff>=0.8,<0.16",
   "uvicorn[standard]>=0.35",
 ]
 

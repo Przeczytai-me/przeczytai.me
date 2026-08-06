@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from test_api import FakeRepo, FakeStorage, add_reading
 
 from app.auth import CurrentUser, get_current_user
 from app.config import Settings, get_settings
@@ -8,7 +9,6 @@ from app.main import app
 from app.normalization import apply_abbreviation_readings, normalize
 from app.pricing import get_prices
 from app.routes.readings import get_file_storage, get_reading_repository
-from test_api import FakeRepo, FakeStorage, add_reading
 
 
 @pytest.fixture(autouse=True)

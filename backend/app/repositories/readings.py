@@ -11,7 +11,6 @@ from botocore.exceptions import BotoCoreError, ClientError
 from app.costs import CostBreakdown
 from app.models import ReadingStatus
 
-
 COST_COUNTERS = (
     "total_usd_micros",
     "tts_usd_micros",

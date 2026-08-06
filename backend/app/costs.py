@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from app.pricing import DEFAULT_PRICES, PRICE_BOOK_VERSION
 from app.splitting import split_text
 
-
 CHARS_PER_MINUTE = 900
 ASSUMED_BITRATE_BPS = 48_000
 USD_MICROS = 1_000_000
