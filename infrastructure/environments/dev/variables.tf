@@ -55,7 +55,7 @@ variable "api_lambda_memory_size" {
 
 variable "processor_lambda_timeout_seconds" {
   type    = number
-  default = 30
+  default = 600
 }
 
 variable "processor_lambda_memory_size" {

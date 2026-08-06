@@ -1,5 +1,6 @@
 import base64
 import json
+from dataclasses import asdict
 from datetime import UTC, datetime
 
 import boto3
@@ -7,7 +8,20 @@ import ulid
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
+from app.costs import CostBreakdown
 from app.models import ReadingStatus
+
+COST_COUNTERS = (
+    "total_usd_micros",
+    "tts_usd_micros",
+    "llm_usd_micros",
+    "compute_usd_micros",
+    "storage_usd_micros",
+    "platform_usd_micros",
+    "chars",
+    "audio_ms",
+    "runs",
+)
 
 
 def _now() -> str:
@@ -248,24 +262,145 @@ class ReadingRepository:
         recording_key: str,
         metadata: dict[str, object],
         timing_map_key: str,
+        *,
+        cost: CostBreakdown | None = None,
     ) -> None:
+        updates = [
+            "#status = :status",
+            "corrected_text_key = :corrected_text_key",
+            "recording_key = :recording_key",
+            "timing_map_key = :timing_map_key",
+            "metadata = :metadata",
+            "updated_at = :updated_at",
+        ]
+        values: dict[str, object] = {
+            ":status": ReadingStatus.COMPLETED,
+            ":corrected_text_key": corrected_text_key,
+            ":recording_key": recording_key,
+            ":timing_map_key": timing_map_key,
+            ":metadata": metadata,
+            ":updated_at": _now(),
+        }
+        if cost is not None:
+            updates.extend(
+                [
+                    "cost_usd_micros = :cost_usd_micros",
+                    "cost_components = :cost_components",
+                    "cost_usage = :cost_usage",
+                    "price_book_version = :price_book_version",
+                ]
+            )
+            values.update(
+                {
+                    ":cost_usd_micros": cost.total_usd_micros,
+                    ":cost_components": {
+                        "tts_usd_micros": cost.tts_usd_micros,
+                        "llm_usd_micros": cost.llm_usd_micros,
+                        "compute_usd_micros": cost.compute_usd_micros,
+                        "storage_usd_micros": cost.storage_usd_micros,
+                        "platform_usd_micros": cost.platform_usd_micros,
+                    },
+                    ":cost_usage": asdict(cost.usage),
+                    ":price_book_version": cost.price_book_version,
+                }
+            )
         self._update_existing(
             owner_user_id,
             reading_id,
-            "SET #status = :status, corrected_text_key = :corrected_text_key, "
-            "recording_key = :recording_key, timing_map_key = :timing_map_key, "
-            "metadata = :metadata, "
-            "updated_at = :updated_at",
+            "SET " + ", ".join(updates),
             {"#status": "status"},
-            {
-                ":status": ReadingStatus.COMPLETED,
-                ":corrected_text_key": corrected_text_key,
-                ":recording_key": recording_key,
-                ":timing_map_key": timing_map_key,
-                ":metadata": metadata,
-                ":updated_at": _now(),
-            },
+            values,
         )
+
+    def add_cost_rollup(
+        self,
+        owner_user_id: str,
+        month: str,
+        cost: CostBreakdown,
+        *,
+        reading_id: str,
+        voice: str,
+        run_key: str,
+    ) -> None:
+        now = _now()
+        usage = cost.usage
+        counters = {
+            "total_usd_micros": cost.total_usd_micros,
+            "tts_usd_micros": cost.tts_usd_micros,
+            "llm_usd_micros": cost.llm_usd_micros,
+            "compute_usd_micros": cost.compute_usd_micros,
+            "storage_usd_micros": cost.storage_usd_micros,
+            "platform_usd_micros": cost.platform_usd_micros,
+            "chars": usage.chars_synthesized,
+            "audio_ms": usage.audio_ms,
+            "runs": 1,
+        }
+        try:
+            self.table.put_item(
+                Item={
+                    "pk": "SYSTEM",
+                    "sk": f"COSTRUN#{month}#{run_key}",
+                    "reading_id": reading_id,
+                    "owner_user_id": owner_user_id,
+                    "vendor": str(usage.vendor),
+                    "voice": voice,
+                    "total_usd_micros": cost.total_usd_micros,
+                    "tts_usd_micros": cost.tts_usd_micros,
+                    "llm_usd_micros": cost.llm_usd_micros,
+                    "compute_usd_micros": cost.compute_usd_micros,
+                    "storage_usd_micros": cost.storage_usd_micros,
+                    "platform_usd_micros": cost.platform_usd_micros,
+                    "chars": usage.chars_synthesized,
+                    "audio_ms": usage.audio_ms,
+                    "chunks": usage.chunks,
+                    "stored_bytes": usage.stored_bytes,
+                    "lambda_memory_mb": usage.lambda_memory_mb,
+                    "compute_ms_by_stage": usage.compute_ms_by_stage,
+                    "llm_input_tokens": usage.llm_input_tokens,
+                    "llm_output_tokens": usage.llm_output_tokens,
+                    "price_book_version": cost.price_book_version,
+                    "created_at": now,
+                },
+                ConditionExpression="attribute_not_exists(sk)",
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return
+            raise
+
+        update_expression = "SET updated_at = :updated_at ADD " + ", ".join(
+            f"{field} :{field}" for field in COST_COUNTERS
+        )
+        values = {":updated_at": now} | {f":{field}": value for field, value in counters.items()}
+        for sort_key in (f"COST#{month}", f"COSTUSER#{month}#{owner_user_id}"):
+            self.table.update_item(
+                Key={"pk": "SYSTEM", "sk": sort_key},
+                UpdateExpression=update_expression,
+                ExpressionAttributeValues=values,
+            )
+
+    def get_system_month_costs(self, months: int) -> list[dict]:
+        response = self.table.query(
+            KeyConditionExpression=Key("pk").eq("SYSTEM") & Key("sk").begins_with("COST#"),
+            Limit=months,
+            ScanIndexForward=False,
+        )
+        return response.get("Items", [])
+
+    def list_user_month_costs(self, month: str) -> list[dict]:
+        response = self.table.query(
+            KeyConditionExpression=Key("pk").eq("SYSTEM")
+            & Key("sk").begins_with(f"COSTUSER#{month}#"),
+        )
+        return response.get("Items", [])
+
+    def list_run_costs(self, limit: int) -> list[dict]:
+        response = self.table.query(
+            KeyConditionExpression=Key("pk").eq("SYSTEM") & Key("sk").begins_with("COSTRUN#"),
+            Limit=limit,
+            ScanIndexForward=False,
+        )
+        return response.get("Items", [])
 
     def list(
         self, owner_user_id: str, limit: int, cursor: str | None

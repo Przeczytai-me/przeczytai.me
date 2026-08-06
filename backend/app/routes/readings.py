@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -6,6 +7,7 @@ from fastapi.responses import RedirectResponse
 
 from app.auth import CurrentUser, get_current_user
 from app.config import Settings, get_settings
+from app.costs import estimate_cost, usage_from_text
 from app.errors import ApiException
 from app.job_serialization import serialize_job
 from app.models import (
@@ -17,6 +19,8 @@ from app.models import (
     ReadingStatus,
     TimingMapResponse,
 )
+from app.normalization import apply_abbreviation_readings, normalize
+from app.pricing import get_prices
 from app.repositories.readings import ProcessingStartError, ReadingRepository, RetryConflictError
 from app.storage import FileStorage, StorageError, StorageObjectNotFoundError
 from app.tts import (
@@ -30,6 +34,7 @@ from app.tts import (
 )
 
 router = APIRouter(prefix="/api/v1/readings", tags=["readings"])
+logger = logging.getLogger(__name__)
 REQUIRED_READING_FIELDS = {
     "reading_id",
     "original_text_key",
@@ -53,6 +58,39 @@ def get_file_storage(settings: Settings = Depends(get_settings)) -> FileStorage:
     return FileStorage(settings.files_bucket_name)
 
 
+def _is_cost_key(key: object) -> bool:
+    folded = str(key).casefold()
+    return "cost" in folded or "price_book" in folded
+
+
+def _strip_cost(value: object) -> object:
+    """Recursively remove cost data from anything returned to users.
+
+    Filtering only top-level keys is not enough: a nested dict or a list of
+    dicts carries the same data straight through.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _strip_cost(child)
+            for key, child in value.items()
+            if not _is_cost_key(key)
+        }
+    if isinstance(value, list):
+        return [_strip_cost(child) for child in value]
+    return value
+
+
+def _public_metadata(metadata: object) -> dict[str, object]:
+    """Cost is internal: it lives in private top-level attributes and is served
+    only by the admin endpoints. Enforcing that here rather than trusting every
+    writer means one careless line cannot leak it, which is how it leaked once.
+    """
+    if not isinstance(metadata, dict):
+        return {}
+    stripped = _strip_cost(metadata)
+    return stripped if isinstance(stripped, dict) else {}
+
+
 def _reading(item: dict) -> Reading:
     return Reading(
         id=item["reading_id"],
@@ -62,7 +100,7 @@ def _reading(item: dict) -> Reading:
         vendor=item.get("vendor"),
         voice=item.get("voice"),
         status=item["status"],
-        metadata=item.get("metadata", {}),
+        metadata=_public_metadata(item.get("metadata", {})),
         char_count=int(item["char_count"]),
         created_at=item["created_at"],
         updated_at=item["updated_at"],
@@ -149,6 +187,33 @@ def _store_original_text(
     return original_text_key
 
 
+def _enforce_cost_limit(
+    original_text: str,
+    abbreviation_readings: list[dict[str, str]] | None,
+    selection: TtsSelection,
+    settings: Settings,
+) -> None:
+    synthesized_text = apply_abbreviation_readings(original_text, abbreviation_readings)
+    try:
+        synthesized_text = normalize(synthesized_text)
+    except Exception:
+        logger.exception("Text normalization failed during cost estimation")
+    usage = usage_from_text(
+        synthesized_text,
+        selection.vendor,
+        max_chunk_chars=settings.max_chunk_chars,
+        lambda_memory_mb=settings.lambda_memory_mb,
+        lambda_timeout_ms=settings.lambda_timeout_ms,
+    )
+    estimated_cost = estimate_cost(usage, get_prices(settings.cost_price_overrides))
+    if estimated_cost.total_usd_micros > settings.max_run_cost_usd * 1_000_000:
+        raise ApiException(
+            "cost_limit_exceeded",
+            "Estimated reading cost exceeds the per-run limit",
+            413,
+        )
+
+
 @router.post("", response_model=Reading, status_code=status.HTTP_202_ACCEPTED)
 async def create_reading(
     request: ReadingCreateRequest,
@@ -160,6 +225,7 @@ async def create_reading(
     original_text = _normalize_original_text(request.original_text, settings.max_text_chars)
     abbreviation_readings = _normalize_abbreviation_readings(request.abbreviation_readings)
     selection = _resolve_create_tts_selection(request, original_text, settings)
+    _enforce_cost_limit(original_text, abbreviation_readings, selection, settings)
     reading_id = repo.next_id()
     original_text_key = _store_original_text(
         owner_user_id=user.user_id,
@@ -256,8 +322,24 @@ async def retry_reading(
     reading_id: str,
     user: CurrentUser = Depends(get_current_user),
     repo: ReadingRepository = Depends(get_reading_repository),
+    storage: FileStorage = Depends(get_file_storage),
+    settings: Settings = Depends(get_settings),
 ) -> Job:
     item = _get_user_reading(user.user_id, reading_id, repo)
+    # The guardrail must not fail open: if the text cannot be read we cannot
+    # price the run, and starting it anyway would let a transient storage error
+    # bypass the cap.
+    try:
+        original_text = storage.get_text(str(item["original_text_key"]))
+    except StorageError as exc:
+        raise ApiException("storage_error", "Failed to load original text", 500) from exc
+    selection = resolve_tts_selection(item.get("vendor"), item.get("voice"))
+    _enforce_cost_limit(
+        original_text,
+        item.get("abbreviation_readings"),
+        selection,
+        settings,
+    )
     try:
         attempt = repo.begin_retry(user.user_id, reading_id)
     except RetryConflictError as exc:
