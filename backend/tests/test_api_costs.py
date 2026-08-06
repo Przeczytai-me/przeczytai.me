@@ -45,6 +45,10 @@ class FakeCostRepo(FakeRepo):
         super().__init__()
         self.system_costs: list[dict] = []
         self.user_costs: list[dict] = []
+        self.run_costs: list[dict] = []
+
+    def list_run_costs(self, limit: int) -> list[dict]:
+        return self.run_costs[:limit]
 
     def get_system_month_costs(self, months: int) -> list[dict]:
         return self.system_costs[:months]
