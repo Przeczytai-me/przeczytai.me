@@ -6,6 +6,7 @@ from fastapi.responses import RedirectResponse
 
 from app.auth import CurrentUser, get_current_user
 from app.config import Settings, get_settings
+from app.costs import estimate_cost, usage_from_text
 from app.errors import ApiException
 from app.job_serialization import serialize_job
 from app.models import (
@@ -17,6 +18,7 @@ from app.models import (
     ReadingStatus,
     TimingMapResponse,
 )
+from app.pricing import get_prices
 from app.repositories.readings import ProcessingStartError, ReadingRepository, RetryConflictError
 from app.storage import FileStorage, StorageError, StorageObjectNotFoundError
 from app.tts import (
@@ -160,6 +162,20 @@ async def create_reading(
     original_text = _normalize_original_text(request.original_text, settings.max_text_chars)
     abbreviation_readings = _normalize_abbreviation_readings(request.abbreviation_readings)
     selection = _resolve_create_tts_selection(request, original_text, settings)
+    usage = usage_from_text(
+        original_text,
+        selection.vendor,
+        max_chunk_chars=settings.max_chunk_chars,
+        lambda_memory_mb=settings.lambda_memory_mb,
+        lambda_timeout_ms=settings.lambda_timeout_ms,
+    )
+    estimated_cost = estimate_cost(usage, get_prices(settings.cost_price_overrides))
+    if estimated_cost.total_usd_micros > settings.max_run_cost_usd * 1_000_000:
+        raise ApiException(
+            "cost_limit_exceeded",
+            "Estimated reading cost exceeds the per-run limit",
+            413,
+        )
     reading_id = repo.next_id()
     original_text_key = _store_original_text(
         owner_user_id=user.user_id,
