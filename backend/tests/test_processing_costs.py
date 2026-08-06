@@ -87,8 +87,16 @@ class FakeRepo:
         item = self.items.setdefault((owner_user_id, reading_id), {})
         item.update({"status": "completed", "metadata": metadata})
 
-    def add_cost_rollup(self, owner_user_id: str, month: str, cost: CostBreakdown) -> None:
-        self.rollups.append((owner_user_id, month, cost))
+    def add_cost_rollup(
+        self,
+        owner_user_id: str,
+        month: str,
+        cost: CostBreakdown,
+        *,
+        reading_id: str,
+        voice: str,
+    ) -> None:
+        self.rollups.append((owner_user_id, month, cost, reading_id, voice))
 
     def set_status(
         self,
@@ -164,10 +172,12 @@ def test_completed_run_records_usage_cost_log_and_rollup(monkeypatch, caplog) ->
     assert isinstance(usage["lambda_memory_mb"], int)
     assert usage["lambda_memory_mb"] > 0
     assert len(repo.rollups) == 1
-    owner_user_id, month, rollup_cost = repo.rollups[0]
+    owner_user_id, month, rollup_cost, rollup_reading_id, rollup_voice = repo.rollups[0]
     assert owner_user_id == "user-1"
     assert re.fullmatch(r"\d{4}-\d{2}", month)
     assert rollup_cost == repo.cost
+    assert rollup_reading_id == "job-1"
+    assert rollup_voice
     cost_logs = [record for record in caplog.records if hasattr(record, "total_usd_micros")]
     assert len(cost_logs) == 1
     assert cost_logs[0].total_usd_micros == repo.cost.total_usd_micros

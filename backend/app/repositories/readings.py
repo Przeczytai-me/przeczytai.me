@@ -12,6 +12,19 @@ from app.costs import CostBreakdown
 from app.models import ReadingStatus
 
 
+COST_COUNTERS = (
+    "total_usd_micros",
+    "tts_usd_micros",
+    "llm_usd_micros",
+    "compute_usd_micros",
+    "storage_usd_micros",
+    "platform_usd_micros",
+    "chars",
+    "audio_ms",
+    "runs",
+)
+
+
 def _now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -301,9 +314,94 @@ class ReadingRepository:
         )
 
     def add_cost_rollup(
-        self, owner_user_id: str, month: str, cost: CostBreakdown
+        self,
+        owner_user_id: str,
+        month: str,
+        cost: CostBreakdown,
+        *,
+        reading_id: str,
+        voice: str,
     ) -> None:
-        pass
+        now = _now()
+        usage = cost.usage
+        counters = {
+            "total_usd_micros": cost.total_usd_micros,
+            "tts_usd_micros": cost.tts_usd_micros,
+            "llm_usd_micros": cost.llm_usd_micros,
+            "compute_usd_micros": cost.compute_usd_micros,
+            "storage_usd_micros": cost.storage_usd_micros,
+            "platform_usd_micros": cost.platform_usd_micros,
+            "chars": usage.chars_synthesized,
+            "audio_ms": usage.audio_ms,
+            "runs": 1,
+        }
+        update_expression = "SET updated_at = :updated_at ADD " + ", ".join(
+            f"{field} :{field}" for field in COST_COUNTERS
+        )
+        values = {":updated_at": now} | {f":{field}": value for field, value in counters.items()}
+        for sort_key in (f"COST#{month}", f"COSTUSER#{month}#{owner_user_id}"):
+            self.table.update_item(
+                Key={"pk": "SYSTEM", "sk": sort_key},
+                UpdateExpression=update_expression,
+                ExpressionAttributeValues=values,
+            )
+
+        self.table.put_item(
+            Item={
+                "pk": "SYSTEM",
+                "sk": f"COSTRUN#{month}#{self.next_id()}",
+                "reading_id": reading_id,
+                "owner_user_id": owner_user_id,
+                "vendor": str(usage.vendor),
+                "voice": voice,
+                "total_usd_micros": cost.total_usd_micros,
+                "tts_usd_micros": cost.tts_usd_micros,
+                "llm_usd_micros": cost.llm_usd_micros,
+                "compute_usd_micros": cost.compute_usd_micros,
+                "storage_usd_micros": cost.storage_usd_micros,
+                "platform_usd_micros": cost.platform_usd_micros,
+                "chars": usage.chars_synthesized,
+                "audio_ms": usage.audio_ms,
+                "chunks": usage.chunks,
+                "stored_bytes": usage.stored_bytes,
+                "lambda_memory_mb": usage.lambda_memory_mb,
+                "compute_ms_by_stage": usage.compute_ms_by_stage,
+                "llm_input_tokens": getattr(usage, "llm_input_tokens", 0),
+                "llm_output_tokens": getattr(usage, "llm_output_tokens", 0),
+                "price_book_version": cost.price_book_version,
+                "created_at": now,
+            }
+        )
+
+    def get_user_month_cost(self, owner_user_id: str, month: str) -> dict:
+        response = self.table.get_item(
+            Key={"pk": "SYSTEM", "sk": f"COSTUSER#{month}#{owner_user_id}"}
+        )
+        item = response.get("Item", {})
+        return item | {field: int(item.get(field, 0)) for field in COST_COUNTERS}
+
+    def get_system_month_costs(self, months: int) -> list[dict]:
+        response = self.table.query(
+            KeyConditionExpression=Key("pk").eq("SYSTEM") & Key("sk").begins_with("COST#"),
+            Limit=months,
+            ScanIndexForward=False,
+        )
+        return response.get("Items", [])
+
+    def list_user_month_costs(self, month: str) -> list[dict]:
+        response = self.table.query(
+            KeyConditionExpression=Key("pk").eq("SYSTEM")
+            & Key("sk").begins_with(f"COSTUSER#{month}#"),
+        )
+        return response.get("Items", [])
+
+    def list_run_costs(self, limit: int) -> list[dict]:
+        response = self.table.query(
+            KeyConditionExpression=Key("pk").eq("SYSTEM") & Key("sk").begins_with("COSTRUN#"),
+            Limit=limit,
+            ScanIndexForward=False,
+        )
+        return response.get("Items", [])
 
     def list(
         self, owner_user_id: str, limit: int, cursor: str | None

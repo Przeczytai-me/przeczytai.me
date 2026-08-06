@@ -170,8 +170,7 @@ async def process_reading(
                     "merge": merge_ms,
                 },
                 lambda_memory_mb=int(
-                    os.environ.get("AWS_LAMBDA_FUNCTION_MEMORY_SIZE")
-                    or settings.lambda_memory_mb
+                    os.environ.get("AWS_LAMBDA_FUNCTION_MEMORY_SIZE") or settings.lambda_memory_mb
                 ),
                 vendor=selection.vendor,
             )
@@ -232,6 +231,8 @@ async def process_reading(
                         owner_user_id,
                         datetime.now(UTC).strftime("%Y-%m"),
                         cost,
+                        reading_id=reading_id,
+                        voice=selection.voice,
                     )
                 except Exception:
                     logger.exception(
