@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import time
-from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,6 +11,7 @@ from app.audio import merge_mp3_files, mp3_duration_seconds
 from app.config import Settings, get_settings
 from app.costs import CostBreakdown, RunUsage, estimate_cost
 from app.models import ReadingStatus
+from app.pricing import get_prices
 from app.normalization import (
     RULE_BASED_NORMALIZATION_VERSION,
     apply_abbreviation_readings,
@@ -174,8 +174,10 @@ async def process_reading(
                 ),
                 vendor=selection.vendor,
             )
-            cost = estimate_cost(usage)
-            metadata["cost_usage"] = asdict(usage)
+            # Prices must come from the same source the creation guardrail uses,
+            # otherwise an operator override would change what gets blocked but
+            # not what gets recorded.
+            cost = estimate_cost(usage, get_prices(settings.cost_price_overrides))
         except Exception:
             logger.exception(
                 "reading cost calculation failed",
@@ -207,7 +209,6 @@ async def process_reading(
                     "reading cost persistence failed",
                     extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
                 )
-                metadata.pop("cost_usage", None)
                 repo.mark_completed(
                     owner_user_id,
                     reading_id,

@@ -55,6 +55,23 @@ def get_file_storage(settings: Settings = Depends(get_settings)) -> FileStorage:
     return FileStorage(settings.files_bucket_name)
 
 
+def _public_metadata(metadata: object) -> dict[str, object]:
+    """Strip cost data from the metadata returned to users.
+
+    Cost is internal: it lives in private top-level attributes and is served
+    only by the admin endpoints. Enforcing that here rather than trusting every
+    writer means one careless line in the processor cannot leak it, which is
+    exactly how it leaked once already.
+    """
+    if not isinstance(metadata, dict):
+        return {}
+    return {
+        key: value
+        for key, value in metadata.items()
+        if "cost" not in str(key).casefold() and "price_book" not in str(key).casefold()
+    }
+
+
 def _reading(item: dict) -> Reading:
     return Reading(
         id=item["reading_id"],
@@ -64,7 +81,7 @@ def _reading(item: dict) -> Reading:
         vendor=item.get("vendor"),
         voice=item.get("voice"),
         status=item["status"],
-        metadata=item.get("metadata", {}),
+        metadata=_public_metadata(item.get("metadata", {})),
         char_count=int(item["char_count"]),
         created_at=item["created_at"],
         updated_at=item["updated_at"],

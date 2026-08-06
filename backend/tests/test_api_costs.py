@@ -240,6 +240,9 @@ def test_reading_endpoints_never_leak_cost_fields() -> None:
             "cost_components": {"tts_usd_micros": 100},
             "cost_usage": {"audio_ms": 1000},
             "price_book_version": "2026-08-05",
+            # metadata IS returned to users, so a cost key hiding in there is the
+            # likeliest way this feature leaks. Seed one and prove it is stripped.
+            "metadata": {"voice": "Zofia", "cost_usage": {"audio_ms": 1000}},
         }
     )
     test_client, _, _ = client(user_id="user-1", repo=repo)

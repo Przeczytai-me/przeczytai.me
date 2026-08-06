@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -156,7 +157,11 @@ def test_completed_run_records_usage_cost_log_and_rollup(monkeypatch, caplog) ->
     assert repo.completed is not None
     metadata = repo.completed["metadata"]
     assert isinstance(metadata, dict)
-    usage = metadata["cost_usage"]
+    # Cost data must never ride along in metadata: that dict IS returned to
+    # users by GET /api/v1/readings. Usage lives on the private CostBreakdown.
+    assert not any("cost" in key for key in metadata)
+    assert repo.cost is not None
+    usage = asdict(repo.cost.usage)
     assert isinstance(usage, dict)
     corrected = storage.texts[storage.corrected_text_key("user-1", "job-1")]
     assert len(corrected) != len(original_text)
@@ -206,7 +211,11 @@ def test_processing_uses_lambda_memory_environment(monkeypatch) -> None:
     assert repo.completed is not None
     metadata = repo.completed["metadata"]
     assert isinstance(metadata, dict)
-    usage = metadata["cost_usage"]
+    # Cost data must never ride along in metadata: that dict IS returned to
+    # users by GET /api/v1/readings. Usage lives on the private CostBreakdown.
+    assert not any("cost" in key for key in metadata)
+    assert repo.cost is not None
+    usage = asdict(repo.cost.usage)
     assert isinstance(usage, dict)
     assert usage["lambda_memory_mb"] == 1536
 
