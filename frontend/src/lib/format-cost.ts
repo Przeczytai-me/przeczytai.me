@@ -52,9 +52,6 @@ export const formatMonth = (month: string): string => {
   return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 };
 
-export const formatPercent = (value: number, digits = 0): string =>
-  `${value.toFixed(digits)}%`;
-
 export const COST_COMPONENTS = [
   "tts",
   "llm",

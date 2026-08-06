@@ -58,10 +58,16 @@ const Tile = ({
   </div>
 );
 
-export const KpiTiles = ({ summary }: { summary: CostSummary }) => {
-  const { totals, months, runs } = summary;
-  const monthlySeries = months.map((month) => month.total_usd);
-  const runSeries = months.map((month) => month.runs);
+export const KpiTiles = ({
+  summary,
+  months,
+}: {
+  summary: CostSummary;
+  months: number;
+}) => {
+  const { totals, runs } = summary;
+  const monthlySeries = summary.months.map((month) => month.total_usd);
+  const runSeries = summary.months.map((month) => month.runs);
   const mostExpensive = runs.reduce(
     (max, run) => Math.max(max, run.total_usd),
     0,
@@ -81,7 +87,7 @@ export const KpiTiles = ({ summary }: { summary: CostSummary }) => {
         }
       />
       <Tile
-        label="All time"
+        label={`Last ${months} months`}
         value={formatUsd(totals.all_time_usd)}
         hint={`${formatCount(totals.runs_all_time)} runs`}
       />

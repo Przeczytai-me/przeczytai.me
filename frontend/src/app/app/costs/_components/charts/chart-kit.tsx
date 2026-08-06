@@ -3,8 +3,6 @@
 import { type ReactNode, useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 
-export type Point = { x: number; y: number };
-
 /** Linear scale. Domains are collapsed defensively: a flat series is common
  *  here (a month of pure edge-tts is genuinely all zero) and must not divide by
  *  zero or render marks at NaN. */

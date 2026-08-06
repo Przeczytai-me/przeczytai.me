@@ -102,13 +102,18 @@ export const VendorBreakdown = ({ summary }: { summary: CostSummary }) => {
  * Free vs paid. The two bars disagreeing is the whole point: edge-tts carries
  * most of the traffic and almost none of the cost.
  */
+/**
+ * Free vs paid. Classification is on the TTS component, not the run total:
+ * an edge-tts run still incurs compute, storage and platform cost, so keying
+ * on total_usd would file every real edge run as "paid" and the panel would
+ * always read 100% paid, which is the opposite of the insight it exists for.
+ */
 export const FreeVsPaid = ({ summary }: { summary: CostSummary }) => {
-  const free = summary.vendors.filter((vendor) => vendor.total_usd === 0);
-  const paid = summary.vendors.filter((vendor) => vendor.total_usd > 0);
-  const freeRuns = free.reduce((sum, vendor) => sum + vendor.runs, 0);
-  const paidRuns = paid.reduce((sum, vendor) => sum + vendor.runs, 0);
-  const paidSpend = paid.reduce((sum, vendor) => sum + vendor.total_usd, 0);
-  const totalRuns = freeRuns + paidRuns;
+  const free = summary.runs.filter((run) => run.components.tts === 0);
+  const paid = summary.runs.filter((run) => run.components.tts > 0);
+  const freeSpend = free.reduce((sum, run) => sum + run.total_usd, 0);
+  const paidSpend = paid.reduce((sum, run) => sum + run.total_usd, 0);
+  const totalRuns = summary.runs.length;
 
   if (totalRuns === 0) {
     return (
@@ -123,21 +128,24 @@ export const FreeVsPaid = ({ summary }: { summary: CostSummary }) => {
   const rows = [
     {
       label: "Share of runs",
-      freeValue: freeRuns,
-      paidValue: paidRuns,
+      freeValue: free.length,
+      paidValue: paid.length,
       format: (value: number) =>
         `${((value / totalRuns) * 100).toFixed(0)}% (${value})`,
     },
     {
       label: "Share of spend",
-      freeValue: 0,
+      freeValue: freeSpend,
       paidValue: paidSpend,
       format: (value: number) => formatUsd(value),
     },
   ];
 
   return (
-    <ChartCard title="Free vs paid" description="Share of runs and of spend">
+    <ChartCard
+      title="Free vs paid"
+      description="Free means a zero TTS component, not a zero total"
+    >
       <div className="space-y-4 pt-1">
         {rows.map((row) => {
           const total = row.freeValue + row.paidValue;

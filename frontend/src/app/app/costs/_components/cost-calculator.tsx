@@ -30,7 +30,7 @@ export const CostCalculator = () => {
     return () => clearTimeout(timer);
   }, [text]);
 
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isError } = useQuery({
     queryKey: ["cost-estimate", debounced],
     queryFn: () => estimateCost(debounced),
     enabled: debounced.trim().length > 0,
@@ -107,10 +107,16 @@ export const CostCalculator = () => {
               ))}
             </ul>
           ) : (
-            <p className="py-8 text-center text-muted-foreground text-xs">
-              {debounced.trim()
-                ? "Estimating…"
-                : "Enter some text to price it."}
+            <p
+              className={`py-8 text-center text-xs ${
+                isError ? "text-destructive" : "text-muted-foreground"
+              }`}
+            >
+              {isError
+                ? "Estimate failed. Edit the text to retry."
+                : debounced.trim()
+                  ? "Estimating…"
+                  : "Enter some text to price it."}
             </p>
           )}
         </div>
