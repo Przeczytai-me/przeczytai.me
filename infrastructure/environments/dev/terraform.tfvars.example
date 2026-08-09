@@ -5,8 +5,10 @@ clerk_jwt_issuer   = "https://fitting-bonefish-84.clerk.accounts.dev"
 clerk_jwt_audience = "przeczytai-api-dev"
 # Create the secret outside Terraform so the API key never lands in state.
 # openai_api_key_secret_arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:openai-api-key-abc123"
+# xai_api_key_secret_arn    = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:xai-api-key-abc123"
 
 # Article processing tunables (processor Lambda). Defaults shown; see
 # docs/backend-configuration.md.
 # max_chunk_chars          = 3000
 # ai_normalization_enabled = false
+# ai_proofreading_timeout_seconds = 20

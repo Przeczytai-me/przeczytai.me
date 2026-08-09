@@ -1,6 +1,5 @@
 import re
 
-
 # Identifier stored in reading metadata for the current normalization rule set.
 RULE_BASED_NORMALIZATION_VERSION = "regex-v1"
 
@@ -70,15 +69,5 @@ def apply_abbreviation_readings(text: str, pairs: list[dict] | None) -> str:
         abbreviation = pair["abbreviation"].strip()
         read_as = pair["read_as"].strip()
         pattern = re.compile(rf"(?<!\w){re.escape(abbreviation)}(?!\w)")
-        text = pattern.sub(lambda _: read_as, text)
-    return text
-
-
-async def ai_normalize(text: str) -> str:
-    """Placeholder for the future Claude API (anthropic SDK) normalization pass.
-
-    Runs after the regex rule pipeline (normalize()). Any failure in the real
-    implementation must fall back to the regex-normalized result. Currently a
-    no-op stub returning the input unchanged.
-    """
+        text = pattern.sub(lambda _, replacement=read_as: replacement, text)
     return text

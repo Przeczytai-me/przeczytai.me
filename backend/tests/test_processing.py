@@ -7,6 +7,7 @@ from app import models
 from app.config import Settings
 from app.normalization import RULE_BASED_NORMALIZATION_VERSION
 from app.processing import process_reading
+from app.proofreading import PROOFREADING_MODEL, PROOFREADING_PROMPT_VERSION, ProofreadingResult
 from app.splitting import split_text
 from app.tts import DEFAULT_TTS_VENDOR, EDGE_TTS_VOICE, OPENAI_TTS_MODEL, TtsSelection
 
@@ -45,9 +46,7 @@ class FakeStorage:
         filename = f"recording.{extension}" if job_id is None else f"recording-{job_id}.{extension}"
         return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
 
-    def timing_map_key(
-        self, owner_user_id: str, reading_id: str, job_id: str | None = None
-    ) -> str:
+    def timing_map_key(self, owner_user_id: str, reading_id: str, job_id: str | None = None) -> str:
         filename = "timing.json" if job_id is None else f"timing-{job_id}.json"
         return f"users/{owner_user_id}/readings/{reading_id}/{filename}"
 
@@ -299,10 +298,7 @@ def test_processing_normalizes_dirty_text() -> None:
     assert storage.texts[corrected_text_key] == expected
     assert storage.bytes[recording_key].endswith(expected.encode())
     assert repo.completed is not None
-    assert (
-        repo.completed["metadata"]["normalization"]
-        == RULE_BASED_NORMALIZATION_VERSION
-    )
+    assert repo.completed["metadata"]["normalization"] == RULE_BASED_NORMALIZATION_VERSION
 
 
 def test_processing_falls_back_when_normalize_raises(monkeypatch) -> None:
@@ -339,17 +335,25 @@ def test_processing_falls_back_when_normalize_raises(monkeypatch) -> None:
     assert repo.completed["metadata"]["normalization"] == "failed"
 
 
-def test_processing_routes_through_ai_normalize_when_enabled(monkeypatch) -> None:
-    async def add_ai_marker(text: str) -> str:
-        return f"{text} [AI]"
+def test_processing_proofreads_original_before_rule_based_normalization(monkeypatch) -> None:
+    proofreading_inputs: list[str] = []
 
-    monkeypatch.setattr("app.processing.ai_normalize", add_ai_marker)
+    async def correct_polish(text: str, _settings: Settings) -> ProofreadingResult:
+        proofreading_inputs.append(text)
+        return ProofreadingResult(
+            text="Wczoraj poszedłem do sklepu!!!",
+            model=PROOFREADING_MODEL,
+            prompt_version=PROOFREADING_PROMPT_VERSION,
+        )
+
+    monkeypatch.setattr("app.processing.proofread_text", correct_polish)
     event = {
         "reading_id": "job-1",
         "owner_user_id": "user-1",
         "original_text_key": "users/user-1/readings/job-1/original.txt",
     }
     storage = FakeStorage()
+    storage.texts[event["original_text_key"]] = "  Wczoraj poszłem do sklepu!!!  "
     repo = FakeRepo()
 
     result = asyncio.run(
@@ -366,19 +370,27 @@ def test_processing_routes_through_ai_normalize_when_enabled(monkeypatch) -> Non
         )
     )
 
-    expected = "Ala ma kota. [AI]"
+    expected = "Wczoraj poszedłem do sklepu!"
     corrected_text_key = storage.corrected_text_key("user-1", "job-1")
     recording_key = storage.recording_key("user-1", "job-1")
     assert result == {"status": "completed"}
+    assert proofreading_inputs == ["  Wczoraj poszłem do sklepu!!!  "]
     assert storage.texts[corrected_text_key] == expected
     assert storage.bytes[recording_key].endswith(expected.encode())
+    assert repo.completed is not None
+    assert repo.completed["metadata"]["proofreading"] == {
+        "status": "completed",
+        "provider": "xai",
+        "model": PROOFREADING_MODEL,
+        "prompt_version": PROOFREADING_PROMPT_VERSION,
+    }
 
 
-def test_processing_falls_back_to_regex_when_ai_normalize_raises(monkeypatch) -> None:
-    async def failing_ai_normalize(_text: str) -> str:
+def test_processing_falls_back_to_regex_when_proofreading_raises(monkeypatch) -> None:
+    async def failing_proofreading(_text: str, _settings: Settings) -> ProofreadingResult:
         raise RuntimeError("ai provider failed")
 
-    monkeypatch.setattr("app.processing.ai_normalize", failing_ai_normalize)
+    monkeypatch.setattr("app.processing.proofread_text", failing_proofreading)
     event = {
         "reading_id": "job-1",
         "owner_user_id": "user-1",
@@ -405,10 +417,13 @@ def test_processing_falls_back_to_regex_when_ai_normalize_raises(monkeypatch) ->
     assert result == {"status": "completed"}
     assert storage.texts[corrected_text_key] == "Ala ma kota."
     assert repo.completed is not None
-    assert (
-        repo.completed["metadata"]["normalization"]
-        == RULE_BASED_NORMALIZATION_VERSION
-    )
+    assert repo.completed["metadata"]["normalization"] == RULE_BASED_NORMALIZATION_VERSION
+    assert repo.completed["metadata"]["proofreading"] == {
+        "status": "fallback",
+        "provider": "xai",
+        "model": PROOFREADING_MODEL,
+        "prompt_version": PROOFREADING_PROMPT_VERSION,
+    }
 
 
 def test_processing_synthesizes_and_merges_multiple_chunks_in_order() -> None:
@@ -455,13 +470,9 @@ def test_processing_synthesizes_and_merges_multiple_chunks_in_order() -> None:
 
     recording_key = storage.recording_key("user-1", reading_id)
     assert result == {"status": "completed"}
-    assert storage.bytes[recording_key] == (
-        b"<chunk-0><chunk-1><chunk-2><chunk-3>"
-    )
+    assert storage.bytes[recording_key] == (b"<chunk-0><chunk-1><chunk-2><chunk-3>")
     assert synthesized_texts == [chunk.text for chunk in expected_chunks]
-    assert output_names == [
-        f"{reading_id}-{chunk.index:04d}.mp3" for chunk in expected_chunks
-    ]
+    assert output_names == [f"{reading_id}-{chunk.index:04d}.mp3" for chunk in expected_chunks]
     assert repo.completed is not None
     assert repo.completed["metadata"]["chunks"] == len(expected_chunks)
     assert len(expected_chunks) >= 3
@@ -668,9 +679,7 @@ def test_processing_synthesizes_single_chunk_text() -> None:
         synthesized_texts.append(chunk_text)
         Path(output_path).write_bytes(b"audio")
 
-    result = asyncio.run(
-        process_reading(event, settings, storage, repo, recording_synthesize)
-    )
+    result = asyncio.run(process_reading(event, settings, storage, repo, recording_synthesize))
 
     assert len(chunks) == 1
     assert chunks[0].text != text
