@@ -10,8 +10,12 @@ from app.models import ReadingStatus
 from app.normalization import (
     RULE_BASED_NORMALIZATION_VERSION,
     apply_abbreviation_readings,
-    ai_normalize,
     normalize,
+)
+from app.proofreading import (
+    PROOFREADING_MODEL,
+    PROOFREADING_PROMPT_VERSION,
+    proofread_text,
 )
 from app.repositories.readings import ReadingRepository
 from app.splitting import split_text
@@ -24,7 +28,6 @@ from app.tts import (
     tts_metadata,
     validate_tts_input,
 )
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -72,7 +75,32 @@ async def process_reading(
         repo.set_status(owner_user_id, reading_id, current_stage)
         if job_id:
             repo.set_job_status(owner_user_id, str(job_id), current_stage)
-        corrected = apply_abbreviation_readings(original_text, pairs)
+
+        proofreading_metadata: dict[str, str] | None = None
+        proofreading_source = original_text
+        if settings.ai_normalization_enabled:
+            try:
+                proofreading_result = await proofread_text(original_text, settings)
+                proofreading_source = proofreading_result.text
+                proofreading_metadata = {
+                    "status": "completed",
+                    "provider": "xai",
+                    "model": proofreading_result.model,
+                    "prompt_version": proofreading_result.prompt_version,
+                }
+            except Exception:
+                logger.exception(
+                    "AI proofreading failed; using the original text",
+                    extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
+                )
+                proofreading_metadata = {
+                    "status": "fallback",
+                    "provider": "xai",
+                    "model": PROOFREADING_MODEL,
+                    "prompt_version": PROOFREADING_PROMPT_VERSION,
+                }
+
+        corrected = proofreading_source
         try:
             corrected = normalize(corrected)
             normalization_status = RULE_BASED_NORMALIZATION_VERSION
@@ -82,15 +110,7 @@ async def process_reading(
                 extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
             )
             normalization_status = "failed"
-
-        if settings.ai_normalization_enabled and normalization_status != "failed":
-            try:
-                corrected = await ai_normalize(corrected)
-            except Exception:
-                logger.exception(
-                    "AI text normalization failed",
-                    extra={"reading_id": reading_id, "owner_user_id": owner_user_id},
-                )
+        corrected = apply_abbreviation_readings(corrected, pairs)
 
         corrected_text_key = storage.corrected_text_key(owner_user_id, reading_id, job_id=job_id)
         recording_key = storage.recording_key(
@@ -137,6 +157,8 @@ async def process_reading(
             "chunks": len(chunks),
             "merge": "byte-concat-v1",
         }
+        if proofreading_metadata:
+            metadata["proofreading"] = proofreading_metadata
         repo.mark_completed(
             owner_user_id,
             reading_id,

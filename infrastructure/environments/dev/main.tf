@@ -1,20 +1,23 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  name_prefix        = "${var.project_slug}-${var.environment}"
-  repo_root          = abspath("${path.root}/../../..")
-  backend_path       = "${local.repo_root}/backend"
-  openai_tts_enabled = var.openai_api_key_secret_arn != ""
+  name_prefix                = "${var.project_slug}-${var.environment}"
+  repo_root                  = abspath("${path.root}/../../..")
+  backend_path               = "${local.repo_root}/backend"
+  openai_tts_enabled         = var.openai_api_key_secret_arn != ""
+  ai_proofreading_configured = var.xai_api_key_secret_arn != ""
 
   processor_environment_variables = merge(
     {
-      ENVIRONMENT              = var.environment
-      FILES_BUCKET_NAME        = module.storage.files_bucket_name
-      READINGS_TABLE_NAME      = module.storage.metadata_table_name
-      MAX_CHUNK_CHARS          = tostring(var.max_chunk_chars)
-      AI_NORMALIZATION_ENABLED = tostring(var.ai_normalization_enabled)
+      ENVIRONMENT                     = var.environment
+      FILES_BUCKET_NAME               = module.storage.files_bucket_name
+      READINGS_TABLE_NAME             = module.storage.metadata_table_name
+      MAX_CHUNK_CHARS                 = tostring(var.max_chunk_chars)
+      AI_NORMALIZATION_ENABLED        = tostring(var.ai_normalization_enabled)
+      AI_PROOFREADING_TIMEOUT_SECONDS = tostring(var.ai_proofreading_timeout_seconds)
     },
-    local.openai_tts_enabled ? { OPENAI_API_KEY_SECRET_ARN = var.openai_api_key_secret_arn } : {}
+    local.openai_tts_enabled ? { OPENAI_API_KEY_SECRET_ARN = var.openai_api_key_secret_arn } : {},
+    local.ai_proofreading_configured ? { XAI_API_KEY_SECRET_ARN = var.xai_api_key_secret_arn } : {}
   )
 
   common_tags = {
@@ -133,6 +136,12 @@ module "processor_lambda" {
       sid       = "ReadOpenaiApiKeySecret"
       actions   = ["secretsmanager:GetSecretValue"]
       resources = [var.openai_api_key_secret_arn]
+    },
+    ] : [], local.ai_proofreading_configured ? [
+    {
+      sid       = "ReadXaiApiKeySecret"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [var.xai_api_key_secret_arn]
     },
   ] : [])
 }

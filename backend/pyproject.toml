@@ -19,7 +19,7 @@ dev = [
   "mutagen>=1.47",
   "python-dotenv>=1.2",
   "pytest>=8.3",
-  "ruff>=0.8",
+  "ruff>=0.8,<0.16",
   "uvicorn[standard]>=0.35",
 ]
 

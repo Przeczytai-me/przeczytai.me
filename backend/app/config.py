@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     max_text_chars: int = 100_000
     max_chunk_chars: int = 3000
     ai_normalization_enabled: bool = False
+    ai_proofreading_timeout_seconds: float = 20
+    xai_api_key: str | None = Field(default=None, validation_alias="XAI_API_KEY")
+    xai_api_key_secret_arn: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("XAI_API_KEY_SECRET_ARN", "XAI_API_KEY_SECRET_ID"),
+    )
     readings_table_name: str = Field(
         default="local-readings",
         validation_alias=AliasChoices(

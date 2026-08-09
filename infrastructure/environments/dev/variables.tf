@@ -39,8 +39,15 @@ variable "max_chunk_chars" {
 }
 
 variable "ai_normalization_enabled" {
-  type    = bool
-  default = false
+  type        = bool
+  default     = false
+  description = "Enable fail-open Grok proofreading before deterministic text normalization."
+}
+
+variable "ai_proofreading_timeout_seconds" {
+  type        = number
+  default     = 20
+  description = "Per-request xAI proofreading timeout before deterministic fallback."
 }
 
 variable "api_lambda_timeout_seconds" {
@@ -72,6 +79,12 @@ variable "openai_api_key_secret_arn" {
   type        = string
   default     = ""
   description = "Secrets Manager secret ARN containing the OpenAI API key for processor TTS."
+}
+
+variable "xai_api_key_secret_arn" {
+  type        = string
+  default     = ""
+  description = "Secrets Manager secret ARN containing the xAI API key for proofreading."
 }
 
 variable "clerk_jwt_issuer" {

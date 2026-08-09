@@ -1,9 +1,6 @@
-import asyncio
-import inspect
-
 import pytest
 
-from app.normalization import ai_normalize, normalize
+from app.normalization import normalize
 
 
 @pytest.mark.parametrize(
@@ -117,21 +114,20 @@ def test_normalize_clean_text_passes_through_unchanged() -> None:
     assert normalize(text) == text
 
 
-def test_ai_normalize_is_async_noop() -> None:
-    text = "Tekst pozostaje bez zmian."
-
-    assert inspect.iscoroutinefunction(ai_normalize)
-    assert asyncio.run(ai_normalize(text)) == text
-
-
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
         ("„Ala” powiedziała “cześć”.", '"Ala" powiedziała "cześć".'),
         ("«Zdanie» w cudzysłowie.", '"Zdanie" w cudzysłowie.'),
         ("To ‚jest' ‘przykład’.", "To 'jest' 'przykład'."),
-        ("Zakres 2020–2024 i pauza — tak, myślnik ― też.", "Zakres 2020-2024 i pauza - tak, myślnik - też."),
-        ('Zwykłe "cudzysłowy" i \'apostrofy\' bez zmian.', 'Zwykłe "cudzysłowy" i \'apostrofy\' bez zmian.'),
+        (
+            "Zakres 2020–2024 i pauza — tak, myślnik ― też.",
+            "Zakres 2020-2024 i pauza - tak, myślnik - też.",
+        ),
+        (
+            "Zwykłe \"cudzysłowy\" i 'apostrofy' bez zmian.",
+            "Zwykłe \"cudzysłowy\" i 'apostrofy' bez zmian.",
+        ),
     ],
 )
 def test_normalize_quotes_and_dashes(source: str, expected: str) -> None:

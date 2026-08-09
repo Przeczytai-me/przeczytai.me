@@ -214,6 +214,11 @@ OpenAI TTS is enabled by `openai_api_key_secret_arn`. The referenced Secrets
 Manager value may be the raw key or JSON containing `OPENAI_API_KEY`,
 `openai_api_key`, or `api_key`.
 
+Grok proofreading is enabled with `ai_normalization_enabled = true` after
+setting `xai_api_key_secret_arn`. The referenced secret may be the raw key or
+JSON containing `XAI_API_KEY`, `xai_api_key`, or `api_key`. Provider, timeout,
+or response-validation failures fall back to deterministic processing.
+
 ## Validation
 
 Run all local checks with:
